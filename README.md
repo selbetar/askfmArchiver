@@ -63,7 +63,7 @@ OPTIONS:
                           Should follow the following format:
                           yyyy''MM''ddTHH''mm''ss [example: 2020-02-12T05:58:25]
  
- -t --threads             Creates a map between thread ids and answer ids 
+-t --threads             Creates a map between thread ids and answer ids 
                           and saves the information to disk
 -h  --title               Specifies a title/header for the first page in the generated markdown file
 
