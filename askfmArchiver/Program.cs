@@ -28,7 +28,7 @@ namespace askfmArchiver
                        .WithNotParsed(HandleParseError);
             CommandLine.Parser.Default.ParseArguments<Options>(args);
 
-            var askfmParser = new Parser(username, pageIterator, endDate, parseThreads);
+            var askfmParser = new Parser(username, title,pageIterator, endDate, parseThreads);
             await askfmParser.Parse();
             
             var markdown = new MarkDown(storageManager.Archive);

@@ -31,13 +31,20 @@ namespace askfmArchiver
         {
             var date     = _archive.LastQuestionDate.ToString("yy-MM-dd_HH-mm");
             var filename = _archive.User + "_" + date;
+            var lines = new List<string>();
             foreach (var content in _archive.Data.Select(ProcessData))
             {
-                await _fm.SaveData(content, filename, FileType.MARKDOWN);
+                lines.Add(content);
+                if (lines.Count < 5000) continue;
+                await _fm.SaveData(content, filename + "-" + _answerCount, FileType.MARKDOWN);
+                lines.Clear();
             }
 
+            if (lines.Count != 0)
+                await _fm.SaveData(lines, filename + "-" + _answerCount, FileType.MARKDOWN);
+
             var info = GenerateHeader();
-            await _fm.SaveData(info, "INFO_" + filename, FileType.MARKDOWN);
+            await _fm.SaveData(new List<string> {info}, "INFO_" + filename, FileType.MARKDOWN);
             Console.WriteLine("Processed Answers Count: " + _answerCount);
         }
 

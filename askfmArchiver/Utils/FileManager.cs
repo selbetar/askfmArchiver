@@ -119,6 +119,8 @@ namespace askfmArchiver.Utils
                 answers.AddRange(obj.Data);
             }
             
+            answers.Sort((e1, e2) => e2.Date.CompareTo(e1.Date));
+            
             var archive = new Archive
                           {
                               Data              = answers,
@@ -142,13 +144,13 @@ namespace askfmArchiver.Utils
                               Encoder       = JavaScriptEncoder.Create(UnicodeRanges.All)
                           };
             var json = JsonSerializer.Serialize(data, options);
-            await File.WriteAllTextAsync(filename, json, Encoding.UTF8);
+            await File.WriteAllTextAsync(Path + filename, json, Encoding.UTF8);
         }
 
         private async Task SaveMarkDown<T>(T data, string filename)
         {
             List<string> lines = (List<string>) (object) data;
-            File.WriteAllLines(filename, lines, Encoding.UTF8);
+            await File.WriteAllLinesAsync(Path + filename, lines, Encoding.UTF8);
         }
     }
 }

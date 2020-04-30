@@ -18,26 +18,28 @@ namespace askfmArchiver
         private readonly NetworkManager _client;
         private readonly FileManager _fm;
 
+        private readonly string _header;
         private readonly string _searchPattern;
         private readonly string _inputPath;
         private readonly string _username;
-        
         private readonly string _baseUrl;
         private readonly string _pageIterator;
         private readonly DateTime _endDate;
-
         private readonly bool _parseThreads;
-        private bool _isDone;
 
+        private bool _isDone;
         private int _vcount;
+        private int _acount;
+        
         private readonly object _lock = new object();
         private readonly object _storageLock = new object();
 
-        public Parser(string username, string pageIterator = "",
+        public Parser(string username, string header, string pageIterator = "",
                       DateTime endDate = default,  bool parseThreads = false, 
                       string inputPath = "input", string searchPattern = "")
         {
             _username       = username;
+            _header         = header;
             _storageManager = StorageManager.GetInstance();
             _fm             = new FileManager();
             _client         = new NetworkManager(username);
@@ -100,6 +102,7 @@ namespace askfmArchiver
                         if (_isDone) break;
                         var task = ParseArticle(article, dataObject);
                         dataTask.Add(task);
+                        _acount++;
                     }
                 }
                 catch (Exception e)
@@ -130,10 +133,10 @@ namespace askfmArchiver
                     break;
 
                 currentPageId = pageOb.NextPageID;
-                Console.WriteLine("# of Pages Parsed: " + _storageManager.Archive.Data.Count / 25);
+                Console.WriteLine("# of Pages Parsed: " + _acount / 25);
             }
 
-            Console.WriteLine("answerCount: " + _storageManager.Archive.Data.Count);
+            Console.WriteLine("Answer Count: " + _acount);
         }
         
         private async Task<DataObject> ParseArticle(HtmlNode question, DataObject dataObject)
@@ -421,9 +424,11 @@ namespace askfmArchiver
             
             if (archive.Data.Count != 0)
             {
-                var filename = _username + archive.Data.First().
+                var filename = _username + "_" + archive.Data.First().
                                                    Date.ToString("yy-MM-dd_HH-mm");
-                
+
+                archive.User              = _username;
+                archive.Header            = _header;
                 archive.QuestionCount     = archive.Data.Count;
                 archive.VisualCount       = _vcount;
                 archive.FirstQuestionDate = archive.Data.Last().Date;
