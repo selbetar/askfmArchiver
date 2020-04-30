@@ -25,12 +25,13 @@ namespace askfmArchiver
         private readonly string _baseUrl;
         private readonly string _pageIterator;
         private readonly DateTime _endDate;
-        private readonly string _dataFileName, _threadFileName, _visualFileName;
 
         private readonly bool _parseThreads;
         private bool _isDone;
 
+        private int _vcount;
         private readonly object _lock = new object();
+        private readonly object _storageLock = new object();
 
         public Parser(string username, string inputPath = "input", string searchPattern = "", string pageIterator = "",
                       DateTime endDate = default, bool parseThreads = false)
@@ -47,11 +48,6 @@ namespace askfmArchiver
 
             _inputPath     = inputPath;
             _searchPattern = searchPattern;
-
-            var date = DateTime.Now.ToString("yyyy''MM''ddTHH''mm''ss");
-            _dataFileName   = DataTypes.Archive + "_" + username + "_" + date;
-            _threadFileName = DataTypes.Threads + "_" + username;
-            _visualFileName = DataTypes.Visuals + "_" + username;
         }
 
         public async Task Parse()
@@ -113,6 +109,20 @@ namespace askfmArchiver
 
                 var data = await Task.WhenAll(dataTask);
                 _storageManager.Archive.Data.AddRange(data);
+                
+                Task writeTask = null;
+                lock (_storageLock)
+                {
+                    if (_storageManager.Archive.Data.Count >= 10000)
+                    {
+                        writeTask = WriteToDisk(true);
+                        _storageManager.Archive.Data.Clear();
+                    }
+                }
+                
+                if (writeTask != null)
+                    await writeTask;
+
                 if (!_isDone && !string.IsNullOrEmpty(pageOb.NextPageID))
                 {
                     currentPageId = pageOb.NextPageID;
@@ -251,7 +261,10 @@ namespace askfmArchiver
             else
             {
                 node = node.SelectSingleNode(node.XPath + "//a");
-                if (node == null) return;
+                if (node == null) {
+                    Console.WriteLine("Error Parsing Visuals: " + dataObject.AnswerID);
+                    return;
+                }
                 var visualType = node.GetAttributeValue("data-action", "");
                 dataObject.VisualType = visualType.Contains("Gif") ? FileType.GIF : FileType.IMG;
                 var attrName = visualType.Contains("Gif") ? "data-src" : "src";
@@ -271,6 +284,8 @@ namespace askfmArchiver
                 _storageManager.VisualMap.Add(srcUrl, dataObject.Visuals);
                 await _client.Download(srcUrl, fileName);
             }
+
+            _vcount++;
         }
 
         private async Task ParseLikes(HtmlNode article, DataObject dataObject)
@@ -397,16 +412,33 @@ namespace askfmArchiver
             return _storageManager.ThreadMap.ContainsKey(id);
         }
 
-        private async Task WriteToDisk()
+        private async Task WriteToDisk(bool dataonly = false)
         {
+            var  archive  = _storageManager.Archive;
             Task dataTask = null, threadsTask = null, visualTask = null;
+            
+            if (archive.Data.Count != 0)
+            {
+                var filename = _username + archive.Data.First().
+                                                   Date.ToString("yy-MM-dd_HH-mm");
+                
+                archive.QuestionCount     = archive.Data.Count;
+                archive.VisualCount       = _vcount;
+                archive.FirstQuestionDate = archive.Data.Last().Date;
+                archive.LastQuestionDate  = archive.Data.First().Date;
+                dataTask                  = _fm.SaveData(archive, filename, FileType.JSON);
+            }
 
-            if (_storageManager.Archive.Data.Count != 0)
-                dataTask = _fm.SaveData(_storageManager.Archive.Data, _dataFileName, FileType.JSON);
-            if (_storageManager.ThreadMap.Count != 0)
-                threadsTask = _fm.SaveData(_storageManager.ThreadMap, _threadFileName, FileType.JSON);
-            if (_storageManager.VisualMap.Count != 0)
-                visualTask = _fm.SaveData(_storageManager.VisualMap, _visualFileName, FileType.JSON);
+            if (!dataonly)
+            {
+                var threadFileName = DataTypes.Threads + "_" + _username;
+                var visualFileName = DataTypes.Visuals + "_" + _username;
+
+                if (_storageManager.ThreadMap.Count != 0)
+                    threadsTask = _fm.SaveData(_storageManager.ThreadMap, threadFileName, FileType.JSON);
+                if (_storageManager.VisualMap.Count != 0)
+                    visualTask = _fm.SaveData(_storageManager.VisualMap, visualFileName, FileType.JSON);
+            }
 
             if (dataTask != null)
                 await dataTask;

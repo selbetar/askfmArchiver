@@ -134,7 +134,7 @@ namespace askfmArchiver.Utils
             Storage.Archive = archive;
         }
 
-        private async Task SaveJson<T>(T data, string fileName)
+        private async Task SaveJson<T>(T data, string filename)
         {
             var options = new JsonSerializerOptions
                           {
@@ -142,13 +142,13 @@ namespace askfmArchiver.Utils
                               Encoder       = JavaScriptEncoder.Create(UnicodeRanges.All)
                           };
             var json = JsonSerializer.Serialize(data, options);
-            await File.WriteAllTextAsync(fileName, json, Encoding.UTF8);
+            await File.WriteAllTextAsync(filename, json, Encoding.UTF8);
         }
 
-        private async Task SaveMarkDown<T>(T data, string fileName)
+        private async Task SaveMarkDown<T>(T data, string filename)
         {
             List<string> lines = (List<string>) (object) data;
-            File.WriteAllLines(fileName, lines, Encoding.UTF8);
+            File.WriteAllLines(filename, lines, Encoding.UTF8);
         }
     }
 }
