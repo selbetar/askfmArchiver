@@ -31,7 +31,7 @@ namespace askfmArchiver
         {
             var date     = _archive.lastQuestionDate.ToString("yy-MM-dd_HH-mm");
             var filename = _archive.user + "_" + date;
-            foreach (var content in _archive.data.Select(ProcessAnswer))
+            foreach (var content in _archive.data.Select(ProcessData))
             {
                 await _fm.SaveData(content, filename, FileType.MARKDOWN);
             }
@@ -41,7 +41,7 @@ namespace askfmArchiver
             Console.WriteLine("Processed Answers Count: " + _answerCount);
         }
 
-        private string ProcessAnswer(DataObject dataObject)
+        private string ProcessData(DataObject dataObject)
         {
             var answer   = ProcessMainText(dataObject.Answer, true);
             var question = ProcessMainText(dataObject.Question, false);
@@ -129,12 +129,7 @@ namespace askfmArchiver
 
             return text;
         }
-
-        private bool ContainsLink(string text)
-        {
-            return text.Contains("<link>");
-        }
-
+        
         private string ProcessVisuals(string visualID, FileType type)
         {
             var visuals = "";
@@ -150,7 +145,7 @@ namespace askfmArchiver
 
             return visuals + "\n\n";
         }
-
+        
         private string ProcessAnswerInfo(DataObject answer)
         {
             var processedText = "";
@@ -166,7 +161,7 @@ namespace askfmArchiver
                            + answer.AuthorID + "</a>";
             return processedText + "\n";
         }
-
+        
         private string GenerateHeader()
         {
             var headerText = "";
@@ -180,5 +175,11 @@ namespace askfmArchiver
             headerText += "# Questions & Answers\n ";
             return headerText;
         }
+        
+        private bool ContainsLink(string text)
+        {
+            return text.Contains("<link>");
+        }
+
     }
 }
