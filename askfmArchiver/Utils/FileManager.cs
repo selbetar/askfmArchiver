@@ -15,20 +15,13 @@ namespace askfmArchiver.Utils
 {
     public class FileManager
     {
-        private const string Path = @"output";
         private static readonly StorageManager Storage = StorageManager.GetInstance();
-        private readonly string _username;
-
-        public FileManager(string username)
-        {
-            _username = username;
-        }
+        private const string Path = @"output/";
 
         public async Task SaveData<T>(T data, string fileName, FileType type)
         {
-            fileName = Path + "/" + fileName;
             Directory.CreateDirectory(Path);
-
+            
             switch (type)
             {
                 case FileType.JSON:
@@ -44,13 +37,22 @@ namespace askfmArchiver.Utils
             }
         }
 
-        public async Task PopulateStorage(DataTypes type)
+        public async Task PopulateStorage(DataTypes type, string username, 
+                                          string searchPattern = "", string path = @"input/")
         {
-            const string inputPath = @"input/";
-            if (!Directory.Exists(inputPath)) return;
-            var fileName = type + "_" + _username;
-            var files    = Directory.GetFiles(inputPath, fileName + "*.json");
+            if (!Directory.Exists(path))
+            {
+                var writer = Console.Error;
+                writer.WriteLine("Invalid Path: " + path);
+                return;
+            }
 
+            if (searchPattern == "")
+            {
+                searchPattern = "*" + type + "_" + username;
+            }
+            
+            var files    = Directory.GetFiles(path, searchPattern);
             var tasks = new List<Task<string>>();
             tasks.AddRange(files.Select(file => File.ReadAllTextAsync(file)));
             var filesData = await Task.WhenAll(tasks);

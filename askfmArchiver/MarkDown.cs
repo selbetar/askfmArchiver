@@ -18,30 +18,25 @@ namespace askfmArchiver
         public string HeaderName { get; set; }
 
         private readonly FileManager _fm;
-        private readonly List<DataObject> _archive;
-        private readonly string _userName, _fileName;
 
         private int _parsedCount, _visualCount;
 
-        public MarkDown(string userName)
+        public MarkDown()
         {
-            _userName    = userName;
-            _archive     = StorageManager.GetInstance().AnswerData;
-            _fileName    = userName + "_" + _archive.First().Date.ToString("yyyy''MM''ddTHH''mm''ss");
             _parsedCount = 0;
             _visualCount = 0;
-            _fm          = new FileManager(userName);
+            _fm          = new FileManager();
         }
 
-        public async Task Generate()
+        public async Task Generate(IEnumerable<DataObject> archive, string filename)
         {
-            foreach (var content in _archive.Select(ProcessAnswer))
+            foreach (var content in archive.Select(ProcessAnswer))
             {
-                await _fm.SaveData(content, _fileName, FileType.MARKDOWN);
+                await _fm.SaveData(content, filename, FileType.MARKDOWN);
             }
 
             var info = ProcessHeader();
-            await _fm.SaveData(info, "Info_" + _fileName, FileType.MARKDOWN);
+            await _fm.SaveData(info, "INFO_" + filename, FileType.MARKDOWN);
             Console.WriteLine("parsedCount: " + _parsedCount);
         }
 

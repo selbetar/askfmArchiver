@@ -18,7 +18,10 @@ namespace askfmArchiver
         private readonly NetworkManager _client;
         private readonly FileManager _fm;
 
-        private readonly string _userName;
+        private string _searchPattern;
+        private string _inputPath;
+        private readonly string _username;
+        
         private readonly string _baseUrl;
         private readonly string _pageIterator;
         private readonly DateTime _endDate;
@@ -29,33 +32,34 @@ namespace askfmArchiver
 
         private readonly object _lock = new object();
 
-        public Parser(string username, string pageIterator = "",
+        public Parser(string username, string inputPath = "input", string searchPattern = "*", string pageIterator = "",
                       DateTime endDate = default, bool parseThreads = false)
         {
-            _userName = username.ToLower();
-
+            _username = username;
             _storageManager = StorageManager.GetInstance();
-            _fm             = new FileManager(_userName);
+            _fm             = new FileManager();
             _client         = new NetworkManager(username);
-
             _baseUrl      = BaseUrl + username;
             _pageIterator = pageIterator;
             _parseThreads = parseThreads;
             _isDone       = false;
             _endDate      = endDate;
 
+            _inputPath = inputPath;
+            _searchPattern = searchPattern;
+
             var date = DateTime.Now.ToString("yyyy''MM''ddTHH''mm''ss");
-            _dataFileName   = DataTypes.Archive + "_" + _userName + "_" + date;
-            _threadFileName = DataTypes.Threads + "_" + _userName;
-            _visualFileName = DataTypes.Visuals + "_" + _userName;
+            _dataFileName   = DataTypes.Archive + "_" + username + "_" + date;
+            _threadFileName = DataTypes.Threads + "_" + username;
+            _visualFileName = DataTypes.Visuals + "_" + username;
         }
 
         public async Task Parse()
         {
             if (_parseThreads)
-                await _fm.PopulateStorage(DataTypes.Threads);
+                await _fm.PopulateStorage(DataTypes.Threads, _username, _inputPath);
 
-            await _fm.PopulateStorage(DataTypes.Visuals);
+            await _fm.PopulateStorage(DataTypes.Visuals, _username, _inputPath);
             var url = _baseUrl;
             if (_pageIterator != "")
                 url += "?older=" + _pageIterator;
