@@ -18,6 +18,7 @@ namespace askfmArchiver
             var    endDate      = DateTime.Now;
             var    title        = "";
             var    md           = false;
+            var    inputPath    = "";
             CommandLine.Parser.Default.ParseArguments<Options>(args)
                        .WithParsed(opts =>
                         {
@@ -27,6 +28,8 @@ namespace askfmArchiver
                             endDate      = opts.EndDate;
                             title        = opts.title;
                             md           = opts.md;
+                            inputPath    = opts.inputPath;
+
                         })
                        .WithNotParsed(HandleParseError);
             CommandLine.Parser.Default.ParseArguments<Options>(args);
@@ -34,13 +37,13 @@ namespace askfmArchiver
             if (md)
             {
                 var fm = new FileManager();
-                await fm.PopulateStorage(DataTypes.Archive, username, "*.json");
+                await fm.PopulateStorage(DataTypes.Archive, username, "*.json", inputPath);
                 var markdown = new MarkDown(storageManager.Archive);
                 await markdown.Generate();
                 return;
             }
             
-            var askfmParser = new Parser(username, title,pageIterator, endDate, parseThreads);
+            var askfmParser = new Parser(username, title, pageIterator, endDate, parseThreads);
             await askfmParser.Parse();
             
         }

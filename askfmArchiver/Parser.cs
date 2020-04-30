@@ -28,6 +28,7 @@ namespace askfmArchiver
         private readonly bool _parseThreads;
 
         private bool _isDone;
+        private bool _isLastPage;
         private int _vcount;
         private int _acount;
         
@@ -35,20 +36,24 @@ namespace askfmArchiver
         private readonly object _storageLock = new object();
 
         public Parser(string username, string header = "", string pageIterator = "",
-                      DateTime endDate = default,  bool parseThreads = false, 
+                      DateTime endDate = default, bool parseThreads = false, 
                       string inputPath = "input", string searchPattern = "")
         {
-            _username       = username;
-            _header         = header;
             _storageManager = StorageManager.GetInstance();
             _fm             = new FileManager();
             _client         = new NetworkManager(username);
-            _baseUrl        = BaseUrl + username;
+
+            _baseUrl = BaseUrl + username;
+            _username       = username;
+            _header         = header;
             _pageIterator   = pageIterator;
             _parseThreads   = parseThreads;
-            _isDone         = false;
             _endDate        = endDate;
 
+            _isDone     = false;
+            _isLastPage = false;
+
+            
             _inputPath     = inputPath;
             _searchPattern = searchPattern;
         }
@@ -76,9 +81,6 @@ namespace askfmArchiver
             }
 
             await WriteToDisk();
-            
-            var md = new MarkDown(_storageManager.Archive);
-            await md.Generate();
         }
 
         private async Task ParsePage(HtmlDocument html)
@@ -132,7 +134,7 @@ namespace askfmArchiver
                 
                 html = await nextHtmlTask;
 
-                if (_isDone)
+                if (html == null)
                     break;
 
                 currentPageId = pageOb.NextPageID;
@@ -373,7 +375,7 @@ namespace askfmArchiver
             var nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next']");
             if (nextPageNode == null)
             {
-                _isDone = true;
+                _isLastPage = true;
                 return null;
             }
             var nextPageUri = nextPageNode.First().GetAttributeValue("href", "");

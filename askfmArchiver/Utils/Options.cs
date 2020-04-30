@@ -29,5 +29,8 @@ namespace askfmArchiver.Utils
         
         [Option('m', "markdown", Required = false)]
         public bool md { get; set; }
+
+        [Option('i', "input", Required = false)]
+        public string inputPath { get; set; } = @"input/";
     }
 }
