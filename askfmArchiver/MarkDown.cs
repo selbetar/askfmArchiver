@@ -15,37 +15,40 @@ namespace askfmArchiver
      */
     public class MarkDown
     {
-        public string HeaderName { get; set; }
-
+        private readonly Archive _archive;
         private readonly FileManager _fm;
-        private readonly List<DataObject> _archive;
-        private readonly string _userName, _fileName;
 
-        private int _parsedCount, _visualCount;
-
-        public MarkDown(string userName)
+        private int _answerCount;
+        
+        public MarkDown(Archive archive)
         {
-            _userName    = userName;
-            _archive     = StorageManager.GetInstance().AnswerData;
-            _fileName    = userName + "_" + _archive.First().Date.ToString("yyyy''MM''ddTHH''mm''ss");
-            _parsedCount = 0;
-            _visualCount = 0;
-            _fm          = new FileManager(userName);
+            _archive     = archive;
+            _answerCount = 0;
+            _fm          = new FileManager();
         }
 
         public async Task Generate()
         {
-            foreach (var content in _archive.Select(ProcessAnswer))
+            var date     = _archive.LastQuestionDate.ToString("yy-MM-dd_HH-mm");
+            var filename = _archive.User + "_" + date;
+            var lines = new List<string>();
+            foreach (var content in _archive.Data.Select(ProcessData))
             {
-                await _fm.SaveData(content, _fileName, FileType.MARKDOWN);
+                lines.Add(content);
+                if (lines.Count < 5000) continue;
+                await _fm.SaveData(content, filename + "-" + _answerCount, FileType.MARKDOWN);
+                lines.Clear();
             }
 
-            var info = ProcessHeader();
-            await _fm.SaveData(info, "Info_" + _fileName, FileType.MARKDOWN);
-            Console.WriteLine("parsedCount: " + _parsedCount);
+            if (lines.Count != 0)
+                await _fm.SaveData(lines, filename + "-" + _answerCount, FileType.MARKDOWN);
+
+            var info = GenerateHeader();
+            await _fm.SaveData(new List<string> {info}, "INFO_" + filename, FileType.MARKDOWN);
+            Console.WriteLine("Processed Answers Count: " + _answerCount);
         }
 
-        private string ProcessAnswer(DataObject dataObject)
+        private string ProcessData(DataObject dataObject)
         {
             var answer   = ProcessMainText(dataObject.Answer, true);
             var question = ProcessMainText(dataObject.Question, false);
@@ -53,7 +56,7 @@ namespace askfmArchiver
             var visuals  = "\n";
             if (!string.IsNullOrEmpty(dataObject.Visuals))
                 visuals += ProcessVisuals(dataObject.Visuals, dataObject.VisualType);
-            _parsedCount++;
+            _answerCount++;
             var content = question + answer + "\n" + visuals + info + "***" + "\n";
             return content;
         }
@@ -133,16 +136,11 @@ namespace askfmArchiver
 
             return text;
         }
-
-        private bool ContainsLink(string text)
-        {
-            return text.Contains("<link>");
-        }
-
+        
         private string ProcessVisuals(string visualID, FileType type)
         {
             var visuals = "";
-            var path    = "visuals_" + _userName + "/" + visualID;
+            var path    = "visuals_" + _archive.User + "/" + visualID;
             if (type != FileType.IMG)
             {
                 visuals = "<a target=\"_blank\" href=\"" + path + "\">Visual Attachment</a>";
@@ -152,10 +150,9 @@ namespace askfmArchiver
                 visuals = "![MISSING: Visuals Folder](" + path + ")";
             }
 
-            _visualCount++;
             return visuals + "\n\n";
         }
-
+        
         private string ProcessAnswerInfo(DataObject answer)
         {
             var processedText = "";
@@ -171,19 +168,25 @@ namespace askfmArchiver
                            + answer.AuthorID + "</a>";
             return processedText + "\n";
         }
-
-        private string ProcessHeader()
+        
+        private string GenerateHeader()
         {
             var headerText = "";
-            headerText += "# " + HeaderName + " Answers Archive\n";
+            headerText += "# " + _archive.Header + " Answers Archive\n";
             headerText += "## File Details:\n";
-            headerText += "First Question Date: " + _archive.Last().Date + "\n\n";
-            headerText += "Last Question Date: " + _archive.First().Date + "\n\n";
-            headerText += "Number of Question: " + _archive.Count + "\n\n";
-            headerText += "Number of Visuals: " + _visualCount + "\n\n";
+            headerText += "First Question Date: " + _archive.Data.Last().Date + "\n\n";
+            headerText += "Last Question Date: " + _archive.Data.First().Date + "\n\n";
+            headerText += "Number of Question: " + _archive.QuestionCount + "\n\n";
+            headerText += "Number of Visuals: " + _archive.VisualCount + "\n\n";
             headerText += "---\n";
             headerText += "# Questions & Answers\n ";
             return headerText;
         }
+        
+        private bool ContainsLink(string text)
+        {
+            return text.Contains("<link>");
+        }
+
     }
 }

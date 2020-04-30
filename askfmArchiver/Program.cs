@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using askfmArchiver.Enums;
 using askfmArchiver.Utils;
 using CommandLine;
 
@@ -10,10 +11,13 @@ namespace askfmArchiver
     {
         private static async Task Main(string[] args)
         {
+            var storageManager = StorageManager.GetInstance();
+            
             string username     = "", pageIterator = "";
             var    parseThreads = false;
             var    endDate      = DateTime.Now;
             var    title        = "";
+            var    md           = false;
             CommandLine.Parser.Default.ParseArguments<Options>(args)
                        .WithParsed(opts =>
                         {
@@ -22,15 +26,23 @@ namespace askfmArchiver
                             parseThreads = opts.ParseThreads;
                             endDate      = opts.EndDate;
                             title        = opts.title;
+                            md           = opts.md;
                         })
                        .WithNotParsed(HandleParseError);
             CommandLine.Parser.Default.ParseArguments<Options>(args);
 
-            var askfmParser = new Parser(username, pageIterator, endDate, parseThreads);
+            if (md)
+            {
+                var fm = new FileManager();
+                await fm.PopulateStorage(DataTypes.Archive, username, "*.json");
+                var markdown = new MarkDown(storageManager.Archive);
+                await markdown.Generate();
+                return;
+            }
+            
+            var askfmParser = new Parser(username, title,pageIterator, endDate, parseThreads);
             await askfmParser.Parse();
-
-            var markdown = new MarkDown(username) {HeaderName = title};
-            await markdown.Generate();
+            
         }
 
         private static void HandleParseError(IEnumerable<Error> errs)

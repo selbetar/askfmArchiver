@@ -18,44 +18,47 @@ namespace askfmArchiver
         private readonly NetworkManager _client;
         private readonly FileManager _fm;
 
-        private readonly string _userName;
+        private readonly string _header;
+        private readonly string _searchPattern;
+        private readonly string _inputPath;
+        private readonly string _username;
         private readonly string _baseUrl;
         private readonly string _pageIterator;
         private readonly DateTime _endDate;
-        private readonly string _dataFileName, _threadFileName, _visualFileName;
-
         private readonly bool _parseThreads;
+
         private bool _isDone;
-
+        private int _vcount;
+        private int _acount;
+        
         private readonly object _lock = new object();
+        private readonly object _storageLock = new object();
 
-        public Parser(string username, string pageIterator = "",
-                      DateTime endDate = default, bool parseThreads = false)
+        public Parser(string username, string header = "", string pageIterator = "",
+                      DateTime endDate = default,  bool parseThreads = false, 
+                      string inputPath = "input", string searchPattern = "")
         {
-            _userName = username.ToLower();
-
+            _username       = username;
+            _header         = header;
             _storageManager = StorageManager.GetInstance();
-            _fm             = new FileManager(_userName);
+            _fm             = new FileManager();
             _client         = new NetworkManager(username);
+            _baseUrl        = BaseUrl + username;
+            _pageIterator   = pageIterator;
+            _parseThreads   = parseThreads;
+            _isDone         = false;
+            _endDate        = endDate;
 
-            _baseUrl      = BaseUrl + username;
-            _pageIterator = pageIterator;
-            _parseThreads = parseThreads;
-            _isDone       = false;
-            _endDate      = endDate;
-
-            var date = DateTime.Now.ToString("yyyy''MM''ddTHH''mm''ss");
-            _dataFileName   = DataTypes.Archive + "_" + _userName + "_" + date;
-            _threadFileName = DataTypes.Threads + "_" + _userName;
-            _visualFileName = DataTypes.Visuals + "_" + _userName;
+            _inputPath     = inputPath;
+            _searchPattern = searchPattern;
         }
 
         public async Task Parse()
         {
             if (_parseThreads)
-                await _fm.PopulateStorage(DataTypes.Threads);
+                await _fm.PopulateStorage(DataTypes.Threads, _username, "", _inputPath);
 
-            await _fm.PopulateStorage(DataTypes.Visuals);
+            await _fm.PopulateStorage(DataTypes.Visuals, _username, "", _inputPath);
             var url = _baseUrl;
             if (_pageIterator != "")
                 url += "?older=" + _pageIterator;
@@ -73,6 +76,9 @@ namespace askfmArchiver
             }
 
             await WriteToDisk();
+            
+            var md = new MarkDown(_storageManager.Archive);
+            await md.Generate();
         }
 
         private async Task ParsePage(HtmlDocument html)
@@ -99,6 +105,7 @@ namespace askfmArchiver
                         if (_isDone) break;
                         var task = ParseArticle(article, dataObject);
                         dataTask.Add(task);
+                        _acount++;
                     }
                 }
                 catch (Exception e)
@@ -108,33 +115,33 @@ namespace askfmArchiver
                 }
 
                 var data = await Task.WhenAll(dataTask);
-                _storageManager.AnswerData.AddRange(data);
-                if (!_isDone && !string.IsNullOrEmpty(pageOb.NextPageID))
+                _storageManager.Archive.Data.AddRange(data);
+                
+                Task writeTask = null;
+                lock (_storageLock)
                 {
-                    currentPageId = pageOb.NextPageID;
-                    html          = await nextHtmlTask;
-                    Console.WriteLine("# of Pages Parsed: " + _storageManager.AnswerData.Count / 25);
-                    continue;
+                    if (_storageManager.Archive.Data.Count >= 10000)
+                    {
+                        writeTask = WriteToDisk(true);
+                        _storageManager.Archive.Data.Clear();
+                    }
                 }
+                
+                if (writeTask != null)
+                    await writeTask;
+                
+                html = await nextHtmlTask;
 
-                break;
+                if (_isDone)
+                    break;
+
+                currentPageId = pageOb.NextPageID;
+                Console.WriteLine("# of Pages Parsed: " + _acount / 25);
             }
 
-            Console.WriteLine("answerCount: " + _storageManager.AnswerData.Count);
+            Console.WriteLine("Answer Count: " + _acount);
         }
-
-        private async Task<HtmlDocument> GetNextPage(HtmlDocument html, DataObject dataObject)
-        {
-            HtmlDocument nextHtml     = null;
-            var          nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next']");
-            if (nextPageNode == null) return nextHtml;
-            var nextPageUri = nextPageNode.First().GetAttributeValue("href", "");
-            dataObject.NextPageID = nextPageUri.Split("=").Last();
-            nextHtml              = await GetHtmlDoc(BaseUrl + nextPageUri);
-
-            return nextHtml;
-        }
-
+        
         private async Task<DataObject> ParseArticle(HtmlNode question, DataObject dataObject)
         {
             var tTask = ParseThreadInfo(question, dataObject);
@@ -151,24 +158,49 @@ namespace askfmArchiver
             return dataObject;
         }
 
-
-        private async Task<HtmlDocument> GetHtmlDoc(string url)
+        /**
+         * If the option -d --endDate is used
+         * _isDone will be set to true here once the specified date
+         * is reached.
+         **/
+        private void ParseUniqueInfo(HtmlNode question, DataObject dataObject)
         {
-            var htmlDoc = new HtmlDocument();
-            var html    = "";
-            try
+            var nodes = question.SelectNodes(question.XPath + "//a[@class='streamItem_meta']");
+            var node = nodes.FirstOrDefault(nd => nd.Attributes.Contains("href")
+                                               && nd.Attributes.Contains("title")
+                                               && nd.Attributes.Contains("class")
+                                               && nd.GetAttributeValue("href", "") != "");
+
+            var date = node.FirstChild.Attributes.First().Value;
+            var id   = node.GetAttributeValue("href", "").Split("/").Last().Trim();
+            dataObject.AnswerID = id;
+            dataObject.Date     = DateTime.ParseExact(date, "yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
+            dataObject.Link     = _baseUrl + "/answers/" + dataObject.AnswerID;
+            var dateCompare = DateTime.Compare(dataObject.Date, _endDate);
+
+            if (_isDone) return;
+            lock (_lock)
             {
-                html = await _client.HttpRequest(url);
+                _isDone = dateCompare <= 0;
             }
-            catch (Exception e)
+        }
+
+        private async Task ParseThreadInfo(HtmlNode thread, DataObject dataObject)
+        {
+            var id    = "";
+            var count = "0";
+            if (HasThreads(thread))
             {
-                Logger.Write("Message:\n" + e.Message + "\nStackTrace:\n" + e.StackTrace);
-                await WriteToDisk();
-                Environment.Exit(1);
+                var threadNode = thread.SelectNodes(thread.XPath + "//a[@class='streamItem_threadDetails keep-asking']")
+                                       .First();
+                id    = threadNode.GetAttributeValue("href", "").Split("/").Last();
+                count = threadNode.InnerText.Trim().Split(" ")[0];
+
+                await ProcessThreads(id, dataObject.AnswerID);
             }
 
-            htmlDoc.LoadHtml(html);
-            return htmlDoc;
+            dataObject.ThreadID     = id;
+            dataObject.NumResponses = int.Parse(count);
         }
 
         private async Task ParseQuestion(HtmlNode article, DataObject dataObject)
@@ -217,21 +249,6 @@ namespace askfmArchiver
             dataObject.Answer = answer.Trim();
         }
 
-        private async Task ParseLikes(HtmlNode article, DataObject dataObject)
-        {
-            var node      = article.SelectSingleNode(article.XPath + "//div[@class='heartButton']");
-            var likesCunt = "";
-            foreach (var child in node.ChildNodes)
-            {
-                if (child.GetAttributeValue("class", "") != "counter")
-                {
-                    likesCunt = node.InnerText.Trim() == "" ? "0" : node.InnerText.Trim();
-                }
-            }
-
-            dataObject.Likes = int.Parse(likesCunt);
-        }
-
         private async Task ParseVisuals(HtmlNode article, DataObject dataObject)
         {
             var srcUrl = "";
@@ -242,14 +259,17 @@ namespace askfmArchiver
             // visual is a video
             if (videoNode != null)
             {
-                var srcNode = node.FirstChild;
+                var srcNode = videoNode.FirstChild;
                 srcUrl                = srcNode.GetAttributeValue("src", "");
                 dataObject.VisualType = FileType.VIDEO;
             }
             else
             {
                 node = node.SelectSingleNode(node.XPath + "//a");
-                if (node == null) return;
+                if (node == null) {
+                    Console.WriteLine("Error Parsing Visuals: " + dataObject.AnswerID);
+                    return;
+                }
                 var visualType = node.GetAttributeValue("data-action", "");
                 dataObject.VisualType = visualType.Contains("Gif") ? FileType.GIF : FileType.IMG;
                 var attrName = visualType.Contains("Gif") ? "data-src" : "src";
@@ -269,59 +289,26 @@ namespace askfmArchiver
                 _storageManager.VisualMap.Add(srcUrl, dataObject.Visuals);
                 await _client.Download(srcUrl, fileName);
             }
+
+            _vcount++;
         }
 
-        /*
-         * If the option -d --endDate is used
-         * _isDone will be set to true here once the specified date
-         * is reached.
-         */
-        private void ParseUniqueInfo(HtmlNode question, DataObject dataObject)
+        private async Task ParseLikes(HtmlNode article, DataObject dataObject)
         {
-            var nodes = question.SelectNodes(question.XPath + "//a[@class='streamItem_meta']");
-            var node = nodes.FirstOrDefault(nd => nd.Attributes.Contains("href")
-                                               && nd.Attributes.Contains("title")
-                                               && nd.Attributes.Contains("class")
-                                               && nd.GetAttributeValue("href", "") != "");
-
-            var date = node.FirstChild.Attributes.First().Value;
-            var id   = node.GetAttributeValue("href", "").Split("/").Last().Trim();
-            dataObject.AnswerID = id;
-            dataObject.Date     = DateTime.ParseExact(date, "yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
-            dataObject.Link     = _baseUrl + "/answers/" + dataObject.AnswerID;
-            var dateCompare = DateTime.Compare(dataObject.Date, _endDate);
-
-            if (_isDone) return;
-            lock (_lock)
+            var node      = article.SelectSingleNode(article.XPath + "//div[@class='heartButton']");
+            var likesCunt = "";
+            foreach (var child in node.ChildNodes)
             {
-                _isDone = dateCompare <= 0;
-            }
-        }
-
-        private async Task ParseThreadInfo(HtmlNode thread, DataObject dataObject)
-        {
-            var id    = "";
-            var count = "0";
-            if (HasThreads(thread))
-            {
-                var threadNode = thread.SelectNodes(thread.XPath + "//a[@class='streamItem_threadDetails keep-asking']")
-                                       .First();
-                id    = threadNode.GetAttributeValue("href", "").Split("/").Last();
-                count = threadNode.InnerText.Trim().Split(" ")[0];
-
-                await ProcessThreads(id, dataObject.AnswerID);
+                if (child.GetAttributeValue("class", "") != "counter")
+                {
+                    likesCunt = node.InnerText.Trim() == "" ? "0" : node.InnerText.Trim();
+                }
             }
 
-            dataObject.ThreadID     = id;
-            dataObject.NumResponses = int.Parse(count);
+            dataObject.Likes = int.Parse(likesCunt);
         }
 
-        private bool HasThreads(HtmlNode question)
-        {
-            var threadNode =
-                question.SelectNodes(question.XPath + "//a[@class='streamItem_threadDetails keep-asking']");
-            return threadNode != null;
-        }
+        
 
         private async Task ProcessThreads(string threadID, string answerID)
         {
@@ -346,18 +333,7 @@ namespace askfmArchiver
                 }
             }
         }
-
-        private bool ThreadExists(string id)
-        {
-            return _storageManager.ThreadMap.ContainsKey(id);
-        }
-
-        private bool IsAPhotoPoll(HtmlNode question)
-        {
-            var node = question.SelectSingleNode(question.XPath + "//div[@class='streamItem_visual photopoll']");
-            return node != null;
-        }
-
+        
         /*
          * if the option -t --thread is used
          * this function will be called on threads
@@ -392,16 +368,87 @@ namespace askfmArchiver
             }
         }
 
-        private async Task WriteToDisk()
+        private async Task<HtmlDocument> GetNextPage(HtmlDocument html, DataObject dataObject)
         {
-            Task dataTask = null, threadsTask = null, visualTask = null;
+            var nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next']");
+            if (nextPageNode == null)
+            {
+                _isDone = true;
+                return null;
+            }
+            var nextPageUri = nextPageNode.First().GetAttributeValue("href", "");
+            dataObject.NextPageID = nextPageUri.Split("=").Last();
+            var nextHtml = await GetHtmlDoc(BaseUrl + nextPageUri);
+            
+            return nextHtml;
+        }
 
-            if (_storageManager.AnswerData.Count != 0)
-                dataTask = _fm.SaveData(_storageManager.AnswerData, _dataFileName, FileType.JSON);
-            if (_storageManager.ThreadMap.Count != 0)
-                threadsTask = _fm.SaveData(_storageManager.ThreadMap, _threadFileName, FileType.JSON);
-            if (_storageManager.VisualMap.Count != 0)
-                visualTask = _fm.SaveData(_storageManager.VisualMap, _visualFileName, FileType.JSON);
+        private async Task<HtmlDocument> GetHtmlDoc(string url)
+        {
+            var htmlDoc = new HtmlDocument();
+            var html    = "";
+            try
+            {
+                html = await _client.HttpRequest(url);
+            }
+            catch (Exception e)
+            {
+                Logger.Write("Message:\n" + e.Message + "\nStackTrace:\n" + e.StackTrace);
+                await WriteToDisk();
+                Environment.Exit(1);
+            }
+
+            htmlDoc.LoadHtml(html);
+            return htmlDoc;
+        }
+        
+        private bool HasThreads(HtmlNode question)
+        {
+            var threadNode =
+                question.SelectNodes(question.XPath + "//a[@class='streamItem_threadDetails keep-asking']");
+            return threadNode != null;
+        }
+
+        private bool IsAPhotoPoll(HtmlNode question)
+        {
+            var node = question.SelectSingleNode(question.XPath + "//div[@class='streamItem_visual photopoll']");
+            return node != null;
+        }
+
+        private bool ThreadExists(string id)
+        {
+            return _storageManager.ThreadMap.ContainsKey(id);
+        }
+
+        private async Task WriteToDisk(bool dataOnly = false)
+        {
+            var  archive  = _storageManager.Archive;
+            Task dataTask = null, threadsTask = null, visualTask = null;
+            
+            if (archive.Data.Count != 0)
+            {
+                var filename = _username + "_" + archive.Data.First().
+                                                   Date.ToString("yy-MM-dd_HH-mm");
+
+                archive.User              = _username;
+                archive.Header            = _header;
+                archive.QuestionCount     = archive.Data.Count;
+                archive.VisualCount       = _vcount;
+                archive.FirstQuestionDate = archive.Data.Last().Date;
+                archive.LastQuestionDate  = archive.Data.First().Date;
+                dataTask                  = _fm.SaveData(archive, filename, FileType.JSON);
+            }
+
+            if (!dataOnly)
+            {
+                var threadFileName = DataTypes.Threads + "_" + _username;
+                var visualFileName = DataTypes.Visuals + "_" + _username;
+
+                if (_storageManager.ThreadMap.Count != 0)
+                    threadsTask = _fm.SaveData(_storageManager.ThreadMap, threadFileName, FileType.JSON);
+                if (_storageManager.VisualMap.Count != 0)
+                    visualTask = _fm.SaveData(_storageManager.VisualMap, visualFileName, FileType.JSON);
+            }
 
             if (dataTask != null)
                 await dataTask;

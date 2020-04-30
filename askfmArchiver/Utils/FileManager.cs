@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection.Metadata;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -15,42 +16,44 @@ namespace askfmArchiver.Utils
 {
     public class FileManager
     {
-        private const string Path = @"output";
         private static readonly StorageManager Storage = StorageManager.GetInstance();
-        private readonly string _username;
+        private const string Path = @"output/";
 
-        public FileManager(string username)
+        public async Task SaveData<T>(T data, string filename, FileType type)
         {
-            _username = username;
-        }
-
-        public async Task SaveData<T>(T data, string fileName, FileType type)
-        {
-            fileName = Path + "/" + fileName;
             Directory.CreateDirectory(Path);
-
+            
             switch (type)
             {
                 case FileType.JSON:
-                    fileName += ".json";
-                    await SaveJson(data, fileName);
+                    filename += ".json";
+                    await SaveJson(data, filename);
                     break;
                 case FileType.MARKDOWN:
-                    fileName += ".md";
-                    await SaveMarkDown(data, fileName);
+                    filename += ".md";
+                    await SaveMarkDown(data, filename);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
         }
 
-        public async Task PopulateStorage(DataTypes type)
+        public async Task PopulateStorage(DataTypes type, string username, 
+                                          string searchPattern = "", string path = @"input/")
         {
-            const string inputPath = @"input/";
-            if (!Directory.Exists(inputPath)) return;
-            var fileName = type + "_" + _username;
-            var files    = Directory.GetFiles(inputPath, fileName + "*.json");
+            if (!Directory.Exists(path))
+            {
+                var writer = Console.Error;
+                writer.WriteLine("Invalid Path: " + path);
+                return;
+            }
 
+            if (searchPattern == "")
+            {
+                searchPattern = "*" + type + "_" + username + "*.json";
+            }
+            
+            var files = Directory.GetFiles(path, searchPattern);
             var tasks = new List<Task<string>>();
             tasks.AddRange(files.Select(file => File.ReadAllTextAsync(file)));
             var filesData = await Task.WhenAll(tasks);
@@ -96,15 +99,44 @@ namespace askfmArchiver.Utils
 
         private void PopulateArchiveList(IEnumerable<string> filesData)
         {
+            var      answers = new List<DataObject>();
+            string   user    = "",           header = "", other = "";
+            int      qcount  = 0,            vcount = 0;
+            DateTime first   = DateTime.Now, last   = DateTime.Now;
+            
             foreach (var data in filesData)
             {
-                var obj = JsonSerializer.Deserialize<List<DataObject>>(data);
-                Storage.AnswerData.AddRange(obj);
-                ;
+                var obj = JsonSerializer.Deserialize<Archive>(data);
+                
+                user   =  obj.User;
+                header =  obj.Header;
+                other  =  obj.Other;
+                qcount += obj.QuestionCount;
+                vcount += obj.VisualCount;
+                first  =  first.CompareTo(obj.FirstQuestionDate) < 0 ? first : obj.FirstQuestionDate;
+                last   =  last.CompareTo(obj.LastQuestionDate) > 0 ? last : obj.LastQuestionDate;
+                
+                answers.AddRange(obj.Data);
             }
+            
+            answers.Sort((e1, e2) => e2.Date.CompareTo(e1.Date));
+            
+            var archive = new Archive
+                          {
+                              Data              = answers,
+                              User              = user,
+                              Header            = header,
+                              Other             = other,
+                              QuestionCount     = qcount,
+                              VisualCount       = vcount,
+                              FirstQuestionDate = first,
+                              LastQuestionDate  = last
+                          };
+            
+            Storage.Archive = archive;
         }
 
-        private async Task SaveJson<T>(T data, string fileName)
+        private async Task SaveJson<T>(T data, string filename)
         {
             var options = new JsonSerializerOptions
                           {
@@ -112,12 +144,13 @@ namespace askfmArchiver.Utils
                               Encoder       = JavaScriptEncoder.Create(UnicodeRanges.All)
                           };
             var json = JsonSerializer.Serialize(data, options);
-            await File.WriteAllTextAsync(fileName, json, Encoding.UTF8);
+            await File.WriteAllTextAsync(Path + filename, json, Encoding.UTF8);
         }
 
-        private async Task SaveMarkDown<T>(T data, string fileName)
+        private async Task SaveMarkDown<T>(T data, string filename)
         {
-            File.AppendAllText(fileName, data.ToString(), Encoding.UTF8);
+            List<string> lines = (List<string>) (object) data;
+            await File.WriteAllLinesAsync(Path + filename, lines, Encoding.UTF8);
         }
     }
 }
