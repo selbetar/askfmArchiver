@@ -112,19 +112,19 @@ namespace askfmArchiver
                 }
 
                 var data = await Task.WhenAll(dataTask);
-                _storageManager.Archive.data.AddRange(data);
+                _storageManager.Archive.Data.AddRange(data);
                 if (!_isDone && !string.IsNullOrEmpty(pageOb.NextPageID))
                 {
                     currentPageId = pageOb.NextPageID;
                     html          = await nextHtmlTask;
-                    Console.WriteLine("# of Pages Parsed: " + _storageManager.Archive.data.Count / 25);
+                    Console.WriteLine("# of Pages Parsed: " + _storageManager.Archive.Data.Count / 25);
                     continue;
                 }
 
                 break;
             }
 
-            Console.WriteLine("answerCount: " + _storageManager.Archive.data.Count);
+            Console.WriteLine("answerCount: " + _storageManager.Archive.Data.Count);
         }
         
         private async Task<DataObject> ParseArticle(HtmlNode question, DataObject dataObject)
@@ -401,8 +401,8 @@ namespace askfmArchiver
         {
             Task dataTask = null, threadsTask = null, visualTask = null;
 
-            if (_storageManager.Archive.data.Count != 0)
-                dataTask = _fm.SaveData(_storageManager.Archive.data, _dataFileName, FileType.JSON);
+            if (_storageManager.Archive.Data.Count != 0)
+                dataTask = _fm.SaveData(_storageManager.Archive.Data, _dataFileName, FileType.JSON);
             if (_storageManager.ThreadMap.Count != 0)
                 threadsTask = _fm.SaveData(_storageManager.ThreadMap, _threadFileName, FileType.JSON);
             if (_storageManager.VisualMap.Count != 0)

@@ -16,11 +16,11 @@ namespace askfmArchiver.Utils
 
         private StorageManager()
         {
-            ThreadMap  = new Dictionary<string, HashSet<string>>();
-            VisualMap  = new Dictionary<string, string>();
+            ThreadMap = new Dictionary<string, HashSet<string>>();
+            VisualMap = new Dictionary<string, string>();
             Archive = new Archive
                       {
-                          data = new List<DataObject>()
+                          Data = new List<DataObject>()
                       };
         }
 

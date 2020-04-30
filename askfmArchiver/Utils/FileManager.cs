@@ -101,7 +101,7 @@ namespace askfmArchiver.Utils
             foreach (var data in filesData)
             {
                 var obj = JsonSerializer.Deserialize<List<DataObject>>(data);
-                Storage.Archive.data.AddRange(obj);
+                Storage.Archive.Data.AddRange(obj);
             }
         }
 

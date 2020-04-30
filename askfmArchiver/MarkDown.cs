@@ -29,9 +29,9 @@ namespace askfmArchiver
 
         public async Task Generate()
         {
-            var date     = _archive.lastQuestionDate.ToString("yy-MM-dd_HH-mm");
-            var filename = _archive.user + "_" + date;
-            foreach (var content in _archive.data.Select(ProcessData))
+            var date     = _archive.LastQuestionDate.ToString("yy-MM-dd_HH-mm");
+            var filename = _archive.User + "_" + date;
+            foreach (var content in _archive.Data.Select(ProcessData))
             {
                 await _fm.SaveData(content, filename, FileType.MARKDOWN);
             }
@@ -133,7 +133,7 @@ namespace askfmArchiver
         private string ProcessVisuals(string visualID, FileType type)
         {
             var visuals = "";
-            var path    = "visuals_" + _archive.user + "/" + visualID;
+            var path    = "visuals_" + _archive.User + "/" + visualID;
             if (type != FileType.IMG)
             {
                 visuals = "<a target=\"_blank\" href=\"" + path + "\">Visual Attachment</a>";
@@ -165,12 +165,12 @@ namespace askfmArchiver
         private string GenerateHeader()
         {
             var headerText = "";
-            headerText += "# " + _archive.header + " Answers Archive\n";
+            headerText += "# " + _archive.Header + " Answers Archive\n";
             headerText += "## File Details:\n";
-            headerText += "First Question Date: " + _archive.data.Last().Date + "\n\n";
-            headerText += "Last Question Date: " + _archive.data.First().Date + "\n\n";
-            headerText += "Number of Question: " + _archive.questionCount + "\n\n";
-            headerText += "Number of Visuals: " + _archive.visualCount + "\n\n";
+            headerText += "First Question Date: " + _archive.Data.Last().Date + "\n\n";
+            headerText += "Last Question Date: " + _archive.Data.First().Date + "\n\n";
+            headerText += "Number of Question: " + _archive.QuestionCount + "\n\n";
+            headerText += "Number of Visuals: " + _archive.VisualCount + "\n\n";
             headerText += "---\n";
             headerText += "# Questions & Answers\n ";
             return headerText;
