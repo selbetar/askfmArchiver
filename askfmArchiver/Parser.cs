@@ -33,8 +33,9 @@ namespace askfmArchiver
         private readonly object _lock = new object();
         private readonly object _storageLock = new object();
 
-        public Parser(string username, string inputPath = "input", string searchPattern = "", string pageIterator = "",
-                      DateTime endDate = default, bool parseThreads = false)
+        public Parser(string username, string pageIterator = "",
+                      DateTime endDate = default,  bool parseThreads = false, 
+                      string inputPath = "input", string searchPattern = "")
         {
             _username       = username;
             _storageManager = StorageManager.GetInstance();
@@ -254,7 +255,7 @@ namespace askfmArchiver
             // visual is a video
             if (videoNode != null)
             {
-                var srcNode = node.FirstChild;
+                var srcNode = videoNode.FirstChild;
                 srcUrl                = srcNode.GetAttributeValue("src", "");
                 dataObject.VisualType = FileType.VIDEO;
             }
@@ -412,7 +413,7 @@ namespace askfmArchiver
             return _storageManager.ThreadMap.ContainsKey(id);
         }
 
-        private async Task WriteToDisk(bool dataonly = false)
+        private async Task WriteToDisk(bool dataOnly = false)
         {
             var  archive  = _storageManager.Archive;
             Task dataTask = null, threadsTask = null, visualTask = null;
@@ -429,7 +430,7 @@ namespace askfmArchiver
                 dataTask                  = _fm.SaveData(archive, filename, FileType.JSON);
             }
 
-            if (!dataonly)
+            if (!dataOnly)
             {
                 var threadFileName = DataTypes.Threads + "_" + _username;
                 var visualFileName = DataTypes.Visuals + "_" + _username;
