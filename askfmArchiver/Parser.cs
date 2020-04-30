@@ -56,9 +56,9 @@ namespace askfmArchiver
         public async Task Parse()
         {
             if (_parseThreads)
-                await _fm.PopulateStorage(DataTypes.Threads, _username, _searchPattern, _inputPath);
+                await _fm.PopulateStorage(DataTypes.Threads, _username, "", _inputPath);
 
-            await _fm.PopulateStorage(DataTypes.Visuals, _username, _searchPattern, _inputPath);
+            await _fm.PopulateStorage(DataTypes.Visuals, _username, "", _inputPath);
             var url = _baseUrl;
             if (_pageIterator != "")
                 url += "?older=" + _pageIterator;
@@ -76,6 +76,9 @@ namespace askfmArchiver
             }
 
             await WriteToDisk();
+            
+            var md = new MarkDown(_storageManager.Archive);
+            await md.Generate();
         }
 
         private async Task ParsePage(HtmlDocument html)
