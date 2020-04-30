@@ -53,7 +53,7 @@ An example of the generated pdf can be found in the `example` folder.
 Clone the project and navigate to the folder called `Run` and 
 execute the following in a command prompot or a terminal.
 ```
-dotnet askfmArchiver.dll -u <user> -h <Markdown Page Title> [options]
+dotnet askfmArchiver.dll -u <user> [options]
 
 OPTIONS:
  -p --page <pageID>       Start parsing at the specified page.
