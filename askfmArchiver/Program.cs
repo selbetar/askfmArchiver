@@ -10,6 +10,8 @@ namespace askfmArchiver
     {
         private static async Task Main(string[] args)
         {
+            var storageManager  = StorageManager.GetInstance();
+            
             string username     = "", pageIterator = "";
             var    parseThreads = false;
             var    endDate      = DateTime.Now;
@@ -28,8 +30,8 @@ namespace askfmArchiver
 
             var askfmParser = new Parser(username, pageIterator, endDate, parseThreads);
             await askfmParser.Parse();
-
-            var markdown = new MarkDown(username) {HeaderName = title};
+            
+            var markdown = new MarkDown(storageManager.Archive);
             await markdown.Generate();
         }
 

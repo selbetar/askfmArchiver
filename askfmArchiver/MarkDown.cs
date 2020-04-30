@@ -15,29 +15,30 @@ namespace askfmArchiver
      */
     public class MarkDown
     {
-        public string HeaderName { get; set; }
-
+        private readonly Archive _archive;
         private readonly FileManager _fm;
 
-        private int _parsedCount, _visualCount;
-
-        public MarkDown()
+        private int _answerCount;
+        
+        public MarkDown(Archive archive)
         {
-            _parsedCount = 0;
-            _visualCount = 0;
+            _archive     = archive;
+            _answerCount = 0;
             _fm          = new FileManager();
         }
 
-        public async Task Generate(IEnumerable<DataObject> archive, string filename)
+        public async Task Generate()
         {
-            foreach (var content in archive.Select(ProcessAnswer))
+            var date     = _archive.lastQuestionDate.ToString("yy-MM-dd_HH-mm");
+            var filename = _archive.user + "_" + date;
+            foreach (var content in _archive.data.Select(ProcessAnswer))
             {
                 await _fm.SaveData(content, filename, FileType.MARKDOWN);
             }
 
-            var info = ProcessHeader();
+            var info = GenerateHeader();
             await _fm.SaveData(info, "INFO_" + filename, FileType.MARKDOWN);
-            Console.WriteLine("parsedCount: " + _parsedCount);
+            Console.WriteLine("Processed Answers Count: " + _answerCount);
         }
 
         private string ProcessAnswer(DataObject dataObject)
@@ -48,7 +49,7 @@ namespace askfmArchiver
             var visuals  = "\n";
             if (!string.IsNullOrEmpty(dataObject.Visuals))
                 visuals += ProcessVisuals(dataObject.Visuals, dataObject.VisualType);
-            _parsedCount++;
+            _answerCount++;
             var content = question + answer + "\n" + visuals + info + "***" + "\n";
             return content;
         }
@@ -137,7 +138,7 @@ namespace askfmArchiver
         private string ProcessVisuals(string visualID, FileType type)
         {
             var visuals = "";
-            var path    = "visuals_" + _userName + "/" + visualID;
+            var path    = "visuals_" + _archive.user + "/" + visualID;
             if (type != FileType.IMG)
             {
                 visuals = "<a target=\"_blank\" href=\"" + path + "\">Visual Attachment</a>";
@@ -147,7 +148,6 @@ namespace askfmArchiver
                 visuals = "![MISSING: Visuals Folder](" + path + ")";
             }
 
-            _visualCount++;
             return visuals + "\n\n";
         }
 
@@ -167,15 +167,15 @@ namespace askfmArchiver
             return processedText + "\n";
         }
 
-        private string ProcessHeader()
+        private string GenerateHeader()
         {
             var headerText = "";
-            headerText += "# " + HeaderName + " Answers Archive\n";
+            headerText += "# " + _archive.header + " Answers Archive\n";
             headerText += "## File Details:\n";
-            headerText += "First Question Date: " + _archive.Last().Date + "\n\n";
-            headerText += "Last Question Date: " + _archive.First().Date + "\n\n";
-            headerText += "Number of Question: " + _archive.Count + "\n\n";
-            headerText += "Number of Visuals: " + _visualCount + "\n\n";
+            headerText += "First Question Date: " + _archive.data.Last().Date + "\n\n";
+            headerText += "Last Question Date: " + _archive.data.First().Date + "\n\n";
+            headerText += "Number of Question: " + _archive.questionCount + "\n\n";
+            headerText += "Number of Visuals: " + _archive.visualCount + "\n\n";
             headerText += "---\n";
             headerText += "# Questions & Answers\n ";
             return headerText;

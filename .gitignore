@@ -352,3 +352,6 @@ MigrationBackup/
 .idea
 .directory
 input/
+
+output/
+*.txt
