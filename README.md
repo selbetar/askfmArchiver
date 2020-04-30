@@ -58,13 +58,14 @@ dotnet askfmArchiver.dll -u <user> -h <Markdown Page Title> [options]
 OPTIONS:
  -p --page <pageID>       Start parsing at the specified page.
  
- -d --endDate <Date>      Stops parsing once an answer that is answered earlier
+ -S --stop-at <Date>      Stops parsing once an answer that is answered earlier
                           than or the same as the specified date is reached.
                           Should follow the following format:
                           yyyy''MM''ddTHH''mm''ss [example: 2020-02-12T05:58:25]
  
  -t --threads             Creates a map between thread ids and answer ids 
                           and saves the information to disk
+-h  --title               Specifies a title/header for the first page in the generated markdown file
 
  ```
  

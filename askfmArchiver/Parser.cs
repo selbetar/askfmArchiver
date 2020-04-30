@@ -34,7 +34,7 @@ namespace askfmArchiver
         private readonly object _lock = new object();
         private readonly object _storageLock = new object();
 
-        public Parser(string username, string header, string pageIterator = "",
+        public Parser(string username, string header = "", string pageIterator = "",
                       DateTime endDate = default,  bool parseThreads = false, 
                       string inputPath = "input", string searchPattern = "")
         {

@@ -9,9 +9,9 @@ namespace askfmArchiver.Utils
                 HelpText              = "The username of the askfm account to be parsed")]
         public string Username { get; set; }
 
-        [Option('h', "title", Required = true,
+        [Option('h', "title", Required = false,
                 HelpText               = "The title of the markdown file")]
-        public string title { get; set; }
+        public string title { get; set; } = "";
 
         [Option('p', "page", Required = false,
                 HelpText              = "A number - The page iterator (id) at which parsing should start")]
