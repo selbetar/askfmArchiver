@@ -147,7 +147,6 @@ namespace askfmArchiver.Utils
 
         private async Task SaveMarkDown<T>(T data, string fileName)
         {
-            T            tmp   = (T) (object) data;
             List<string> lines = (List<string>) (object) data;
             File.WriteAllLines(fileName, lines, Encoding.UTF8);
         }
