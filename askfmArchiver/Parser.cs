@@ -123,16 +123,14 @@ namespace askfmArchiver
                 
                 if (writeTask != null)
                     await writeTask;
+                
+                html = await nextHtmlTask;
 
-                if (!_isDone && !string.IsNullOrEmpty(pageOb.NextPageID))
-                {
-                    currentPageId = pageOb.NextPageID;
-                    html          = await nextHtmlTask;
-                    Console.WriteLine("# of Pages Parsed: " + _storageManager.Archive.Data.Count / 25);
-                    continue;
-                }
+                if (_isDone)
+                    break;
 
-                break;
+                currentPageId = pageOb.NextPageID;
+                Console.WriteLine("# of Pages Parsed: " + _storageManager.Archive.Data.Count / 25);
             }
 
             Console.WriteLine("answerCount: " + _storageManager.Archive.Data.Count);
@@ -366,13 +364,16 @@ namespace askfmArchiver
 
         private async Task<HtmlDocument> GetNextPage(HtmlDocument html, DataObject dataObject)
         {
-            HtmlDocument nextHtml     = null;
-            var          nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next']");
-            if (nextPageNode == null) return nextHtml;
+            var nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next']");
+            if (nextPageNode == null)
+            {
+                _isDone = true;
+                return null;
+            }
             var nextPageUri = nextPageNode.First().GetAttributeValue("href", "");
             dataObject.NextPageID = nextPageUri.Split("=").Last();
-            nextHtml              = await GetHtmlDoc(BaseUrl + nextPageUri);
-
+            var nextHtml = await GetHtmlDoc(BaseUrl + nextPageUri);
+            
             return nextHtml;
         }
 
