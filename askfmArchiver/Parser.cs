@@ -134,7 +134,7 @@ namespace askfmArchiver
                 
                 html = await nextHtmlTask;
 
-                if (html == null)
+                if (_isLastPage)
                     break;
 
                 currentPageId = pageOb.NextPageID;
