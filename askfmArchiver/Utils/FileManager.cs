@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection.Metadata;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -18,19 +19,19 @@ namespace askfmArchiver.Utils
         private static readonly StorageManager Storage = StorageManager.GetInstance();
         private const string Path = @"output/";
 
-        public async Task SaveData<T>(T data, string fileName, FileType type)
+        public async Task SaveData<T>(T data, string filename, FileType type)
         {
             Directory.CreateDirectory(Path);
             
             switch (type)
             {
                 case FileType.JSON:
-                    fileName += ".json";
-                    await SaveJson(data, fileName);
+                    filename += ".json";
+                    await SaveJson(data, filename);
                     break;
                 case FileType.MARKDOWN:
-                    fileName += ".md";
-                    await SaveMarkDown(data, fileName);
+                    filename += ".md";
+                    await SaveMarkDown(data, filename);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -49,10 +50,10 @@ namespace askfmArchiver.Utils
 
             if (searchPattern == "")
             {
-                searchPattern = "*" + type + "_" + username;
+                searchPattern = "*" + type + "_" + username + "*.json";
             }
             
-            var files    = Directory.GetFiles(path, searchPattern);
+            var files = Directory.GetFiles(path, searchPattern);
             var tasks = new List<Task<string>>();
             tasks.AddRange(files.Select(file => File.ReadAllTextAsync(file)));
             var filesData = await Task.WhenAll(tasks);
@@ -98,11 +99,39 @@ namespace askfmArchiver.Utils
 
         private void PopulateArchiveList(IEnumerable<string> filesData)
         {
+            var      answers = new List<DataObject>();
+            string   user    = "",           header = "", other = "";
+            int      qcount  = 0,            vcount = 0;
+            DateTime first   = DateTime.Now, last   = DateTime.Now;
+            
             foreach (var data in filesData)
             {
-                var obj = JsonSerializer.Deserialize<List<DataObject>>(data);
-                Storage.Archive.Data.AddRange(obj);
+                var obj = JsonSerializer.Deserialize<Archive>(data);
+                
+                user   =  obj.User;
+                header =  obj.Header;
+                other  =  obj.Other;
+                qcount += obj.QuestionCount;
+                vcount += obj.VisualCount;
+                first  =  first.CompareTo(obj.FirstQuestionDate) < 0 ? first : obj.FirstQuestionDate;
+                last   =  last.CompareTo(obj.LastQuestionDate) > 0 ? last : obj.LastQuestionDate;
+                
+                answers.AddRange(obj.Data);
             }
+            
+            var archive = new Archive
+                          {
+                              Data              = answers,
+                              User              = user,
+                              Header            = header,
+                              Other             = other,
+                              QuestionCount     = qcount,
+                              VisualCount       = vcount,
+                              FirstQuestionDate = first,
+                              LastQuestionDate  = last
+                          };
+            
+            Storage.Archive = archive;
         }
 
         private async Task SaveJson<T>(T data, string fileName)
@@ -118,7 +147,9 @@ namespace askfmArchiver.Utils
 
         private async Task SaveMarkDown<T>(T data, string fileName)
         {
-            File.AppendAllText(fileName, data.ToString(), Encoding.UTF8);
+            T            tmp   = (T) (object) data;
+            List<string> lines = (List<string>) (object) data;
+            File.WriteAllLines(fileName, lines, Encoding.UTF8);
         }
     }
 }
