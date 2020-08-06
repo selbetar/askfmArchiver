@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using askfmArchiver.Enums;
 using askfmArchiver.Utils;
-using AskfmArchiver.Utils;
 using CommandLine;
 using Microsoft.Data.Sqlite;
 

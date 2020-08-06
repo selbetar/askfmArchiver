@@ -1,7 +1,7 @@
 using System;
 using CommandLine;
 
-namespace AskfmArchiver.Utils
+namespace askfmArchiver.Utils
 {
     public class Options
     {

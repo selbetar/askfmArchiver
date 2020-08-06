@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using askfmArchiver.Enums;
 using askfmArchiver.Models;
 using askfmArchiver.Utils;
-using AskfmArchiver.Utils;
 using HtmlAgilityPack;
 
 namespace askfmArchiver
