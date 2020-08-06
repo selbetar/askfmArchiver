@@ -6,6 +6,7 @@ namespace askfmArchiver.Enums
         MARKDOWN,
         VIDEO,
         IMG,
-        GIF
+        GIF,
+        NONE
     }
 }

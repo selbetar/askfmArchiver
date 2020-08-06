@@ -14,7 +14,7 @@ namespace askfmArchiver.Models
         public DateTime Date { get; set; }
         public int Likes { get; set; }
         public string VisualId { get; set; }
-        public FileType VisualType { get; set; }
+        public FileType VisualType { get; set; } = FileType.NONE;
         public string VisualUrl { get; set; }
         public string VisualExt { get; set; }
         public string VisualHash { get; set; }
