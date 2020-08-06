@@ -1,62 +1,79 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using askfmArchiver.Enums;
-using askfmArchiver.Objects;
+using askfmArchiver.Models;
 using askfmArchiver.Utils;
 
 namespace askfmArchiver
 {
-    /**
-     * Generate a markdown file
-     * with css styles defined in markdown-pdf.css
-     */
     public class MarkDown
     {
-        private readonly Archive _archive;
-        private readonly FileManager _fm;
-
-        private int _answerCount;
+        private  readonly string _userId;
+        private readonly string _outDir;
+    
+        // tid, thread count
+        private readonly Dictionary<string, int> _threadMap;
         
-        public MarkDown(Archive archive)
+        public MarkDown(string userId, string outDir = @"./output")
         {
-            _archive     = archive;
-            _answerCount = 0;
-            _fm          = new FileManager();
+            _userId = userId;
+            _outDir = outDir;
+            _threadMap = new Dictionary<string, int>();
         }
-
         public async Task Generate()
         {
-            var date     = _archive.LastQuestionDate.ToString("yy-MM-dd_HH-mm");
-            var filename = _archive.User + "_" + date;
+            var answers = GetRecord();
+
+            if (answers.Count == 0)
+            {
+                Console.WriteLine("Nothing to generate.");
+                return;
+            }
+
             var lines = new List<string>();
-            foreach (var content in _archive.Data.Select(ProcessData))
+            var filename = _userId + "_";
+            var fileCount = 0;
+            var file = "";
+            foreach (var content in answers.Select(ProcessData))
             {
                 lines.Add(content);
                 if (lines.Count < 5000) continue;
-                await _fm.SaveData(content, filename + "-" + _answerCount, FileType.MARKDOWN);
+                file = filename + fileCount.ToString("D3");
+                await SaveFile(lines, file);
                 lines.Clear();
+                fileCount++;
             }
 
+            file = filename + fileCount.ToString("D3");
             if (lines.Count != 0)
-                await _fm.SaveData(lines, filename + "-" + _answerCount, FileType.MARKDOWN);
+                await SaveFile(lines, file);
 
             var info = GenerateHeader();
-            await _fm.SaveData(new List<string> {info}, "INFO_" + filename, FileType.MARKDOWN);
-            Console.WriteLine("Processed Answers Count: " + _answerCount);
+            UpdatePdfTable(answers.Last().AnswerId, answers.Last().Date);
+            await SaveFile(new List<string> {info}, "info_" + _userId);
+            Console.WriteLine("Markdown generation has finished: Generated {0} files", fileCount);
         }
 
-        private string ProcessData(DataObject dataObject)
+        private async Task SaveFile(List<string> lines, string filename)
         {
-            var answer   = ProcessMainText(dataObject.Answer, true);
-            var question = ProcessMainText(dataObject.Question, false);
-            var info     = ProcessAnswerInfo(dataObject);
+            var fm = new FileManager();
+            var  file = Path.Combine(_outDir, filename);
+           await fm.SaveData(lines, file, FileType.MARKDOWN);
+
+        }
+        
+        private string ProcessData(Answer ans)
+        {
+            var answer   = ProcessMainText(ans.AnswerText, true);
+            var question = ProcessMainText(ans.QuestionText, false);
+            var info     = ProcessAnswerInfo(ans);
             var visuals  = "\n";
-            if (!string.IsNullOrEmpty(dataObject.Visuals))
-                visuals += ProcessVisuals(dataObject.Visuals, dataObject.VisualType);
-            _answerCount++;
+            if (!string.IsNullOrEmpty(ans.VisualId))
+                visuals += ProcessVisuals(ans, ans.VisualType);
             var content = question + answer + "\n" + visuals + info + "***" + "\n";
             return content;
         }
@@ -123,7 +140,7 @@ namespace askfmArchiver
             foreach (var match in matches)
             {
                 var str = match.ToString().Replace("<link>", "")
-                               .Replace("<\\link>", "");
+                    .Replace("<\\link>", "");
                 var alias = str;
                 if (str.StartsWith("@"))
                 {
@@ -137,13 +154,17 @@ namespace askfmArchiver
             return text;
         }
         
-        private string ProcessVisuals(string visualID, FileType type)
+        private string ProcessVisuals(Answer ans, FileType type)
         {
+            var visualFile = ans.VisualId + "." + ans.VisualExt;
             var visuals = "";
-            var path    = "visuals_" + _archive.User + "/" + visualID;
+            var path = Path.Combine(_outDir,"visuals_" + ans.UserId, visualFile);
+            
             if (type != FileType.IMG)
             {
-                visuals = "<a target=\"_blank\" href=\"" + path + "\">Visual Attachment</a>";
+                var answerLink = "https://ask.fm/" + ans.UserId + "/answers/" +  ans.AnswerId;
+                var url = string.IsNullOrEmpty(ans.VisualUrl) ? answerLink : ans.VisualUrl;
+                visuals = "<a target=\"_blank\" href=\"" + url + "\">Visual: " + type + "</a>";
             }
             else
             {
@@ -153,33 +174,37 @@ namespace askfmArchiver
             return visuals + "\n\n";
         }
         
-        private string ProcessAnswerInfo(DataObject answer)
+        private string ProcessAnswerInfo(Answer answer)
         {
             var processedText = "";
-            var spacing       = "&emsp;&emsp;";
-
-            processedText += "<a target=\"_blank\" href=\"" + answer.Link + "\">" +
+            const string spacing       = "&emsp;&emsp;";
+            var link = "https://ask.fm/" + answer.UserId + "/answers/" +  answer.AnswerId; 
+            processedText += "<a target=\"_blank\" href=\"" + link + "\">" +
                              answer.Date.ToString("yyyy-MM-dd HH:mm") + "</a>" + spacing;
             processedText += "Likes: " + answer.Likes + spacing;
-            processedText += "ThreadCount: " + answer.NumResponses + "  " + spacing; // + "\n";
-            if (string.IsNullOrEmpty(answer.AuthorID)) return processedText + "\n";
-            var authorLink = "https://ask.fm/" + answer.AuthorID;
+            processedText += "ThreadCount: " + _threadMap[answer.ThreadId] + "  " + spacing;
+            if (string.IsNullOrEmpty(answer.AuthorId)) return processedText + "\n";
+            var authorLink = "https://ask.fm/" + answer.AuthorId;
             processedText += "Question By: " + "<a target=\"_blank\" href=\"" + authorLink + "\">"
-                           + answer.AuthorID + "</a>";
+                             + answer.AuthorId + "</a>";
             return processedText + "\n";
         }
-        
+
         private string GenerateHeader()
         {
+            using var db = new MyDbContext();
+
+            var user = db.Users.First(u => u.UserId == _userId);
+            var qCount = db.Answers.Count(u => u.UserId == _userId);
+            var vCount = db.Answers.Count(v => v.VisualId != null && v.UserId == _userId);
             var headerText = "";
-            headerText += "# " + _archive.Header + " Answers Archive\n";
+            headerText += "# " + user.UserName + " Askfm Archive\n";
             headerText += "## File Details:\n";
-            headerText += "First Question Date: " + _archive.Data.Last().Date + "\n\n";
-            headerText += "Last Question Date: " + _archive.Data.First().Date + "\n\n";
-            headerText += "Number of Question: " + _archive.QuestionCount + "\n\n";
-            headerText += "Number of Visuals: " + _archive.VisualCount + "\n\n";
-            headerText += "---\n";
-            headerText += "# Questions & Answers\n ";
+            headerText += "First Question Date: " + user.FirstQuestion + "\n\n";
+            headerText += "Last Question Date: " + user.LastQuestion + "\n\n";
+            headerText += "Number of Questions: " + qCount + "\n\n";
+            headerText += "Number of Visuals: " + vCount + "\n\n";
+            headerText += "---";
             return headerText;
         }
         
@@ -187,6 +212,49 @@ namespace askfmArchiver
         {
             return text.Contains("<link>");
         }
+        
+        private List<Answer> GetRecord()
+        {
+            using var db = new MyDbContext();
+            var pdfGen = db.PdfGen.FirstOrDefault(u => u.UserId == _userId);
+            var stopAt = pdfGen?.StopAt ?? DateTime.MinValue;
 
+            var answers = db.Answers.
+                Where(u => u.UserId == _userId && DateTime.Compare(u.Date, stopAt) > 0)
+                .OrderBy(u => u.Date).
+                ToList();
+
+            if (answers.Count == 0)
+                return new List<Answer>();
+            
+            foreach (var answer in answers.Where(answer => !_threadMap.TryAdd(answer.ThreadId, 0)))
+            {
+                _threadMap[answer.ThreadId] = _threadMap[answer.ThreadId] + 1;
+            }
+
+            return answers;
+        }
+
+        private void UpdatePdfTable(string answerId, DateTime stopAt)
+        {
+            using var db = new MyDbContext();
+            var pdfGen = db.PdfGen.FirstOrDefault(u => u.UserId == _userId);
+            if (pdfGen != null)
+            {
+                pdfGen.AnswerId = answerId;
+                pdfGen.StopAt = stopAt;
+            }
+            else
+            {
+                pdfGen = new PdfGen
+                {
+                    UserId = _userId,
+                    StopAt = stopAt,
+                    AnswerId = answerId 
+                };
+                db.Add(pdfGen);
+            }
+            db.SaveChanges();
+        }
     }
 }

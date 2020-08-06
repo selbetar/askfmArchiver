@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using askfmArchiver.Enums;
-using askfmArchiver.Objects;
+using askfmArchiver.Models;
 using askfmArchiver.Utils;
+using AskfmArchiver.Utils;
 using HtmlAgilityPack;
 
 namespace askfmArchiver
@@ -14,137 +17,143 @@ namespace askfmArchiver
     {
         private const string BaseUrl = "https://ask.fm/";
 
-        private readonly StorageManager _storageManager;
-        private readonly NetworkManager _client;
-        private readonly FileManager _fm;
-
-        private readonly string _header;
-        private readonly string _searchPattern;
-        private readonly string _inputPath;
-        private readonly string _username;
+        private readonly string _userId;
         private readonly string _baseUrl;
         private readonly string _pageIterator;
-        private readonly DateTime _endDate;
-        private readonly bool _parseThreads;
+        private readonly DateTime _stopAt;
+        private readonly string _output;
+        
+        private string _userName;
+        private readonly List<Answer> _answers;
 
+        private readonly NetworkManager _requestClient;
+        
         private bool _isDone;
         private bool _isLastPage;
-        private int _vcount;
-        private int _acount;
+        private int _ansCount;
         
         private readonly object _lock = new object();
-        private readonly object _storageLock = new object();
-
-        public Parser(string username, string header = "", string pageIterator = "",
-                      DateTime endDate = default, bool parseThreads = false, 
-                      string inputPath = "input", string searchPattern = "")
+        private readonly object _logLock = new object();
+        
+        public Parser(string userId, string output, string pageIterator = "",
+            DateTime endDate = default)
         {
-            _storageManager = StorageManager.GetInstance();
-            _fm             = new FileManager();
-            _client         = new NetworkManager(username);
-
-            _baseUrl = BaseUrl + username;
-            _username       = username;
-            _header         = header;
+            _baseUrl = BaseUrl + userId;
+            _userId       = userId.ToLower();
             _pageIterator   = pageIterator;
-            _parseThreads   = parseThreads;
-            _endDate        = endDate;
+            _stopAt        = endDate;
+            _output = output;
+            
+            _answers = new List<Answer>();
+            _requestClient = new NetworkManager();
 
             _isDone     = false;
             _isLastPage = false;
-
-            
-            _inputPath     = inputPath;
-            _searchPattern = searchPattern;
         }
-
+        
         public async Task Parse()
         {
-            if (_parseThreads)
-                await _fm.PopulateStorage(DataTypes.Threads, _username, "", _inputPath);
-
-            await _fm.PopulateStorage(DataTypes.Visuals, _username, "", _inputPath);
             var url = _baseUrl;
             if (_pageIterator != "")
                 url += "?older=" + _pageIterator;
 
             try
             {
-                var htmlDoc = await GetHtmlDoc(url);
-                await ParsePage(htmlDoc);
+                if (!DoesUserExist())
+                    InsertUser();
             }
             catch (Exception e)
             {
-                Logger.Write("Message:\n" + e.Message + "\nStackTrace:\n" + e.StackTrace);
-                await WriteToDisk();
+                Logger.WriteLine("Parse() Exception: ", e);
+                Environment.Exit(1);
+            }
+            try
+            {
+                var htmlTask =  GetHtmlDoc(url);
+                var htmlDoc = await htmlTask;
+                await ParsePage(htmlDoc);
+                Console.Write("\rProgress: {0}%   ", 100);
+                Console.WriteLine("Finished Parsing {0} answers.", _ansCount);
+            }
+            catch (Exception e)
+            {
+                lock(_logLock)
+                {
+                    Logger.WriteLine("Parse() Exception: ", e);
+                    Logger.WriteLine("Attempting to commit " + _answers.Count + " parsed answers...");
+                }
+
+                if (_answers.Count == 0)
+                    Environment.Exit(1);
+                
+                var dbTask = WriteToDb();
+                await dbTask;
+                
                 Environment.Exit(1);
             }
 
-            await WriteToDisk();
+            await WriteToDb();
         }
-
+        
         private async Task ParsePage(HtmlDocument html)
         {
             var currentPageId = _pageIterator;
+            var totalAnswerCount = GetAnswerCount(html);
+            SetUserName(html);
+            
             while (true)
             {
-                var pageOb       = new DataObject();
+                var pageOb       = new Answer();
                 var nextHtmlTask = GetNextPage(html, pageOb);
 
                 // Get the node that contains all of the questions on this page
                 var articleNodes = html.DocumentNode.SelectNodes("//div[@class='item-page']")
-                                       .First()
-                                       .SelectNodes("//article");
+                    .First()
+                    .SelectNodes("//article");
 
-                var dataTask = new List<Task<DataObject>>();
+                var dataTask = new List<Task<Answer>>();
                 try
                 {
                     foreach (var article in articleNodes)
                     {
                         if (IsAPhotoPoll(article)) continue;
-                        var dataObject = new DataObject {CurrentPageID = currentPageId};
+                        var dataObject = new Answer {UserId =  _userId, PageId = currentPageId};
                         ParseUniqueInfo(article, dataObject);
                         if (_isDone) break;
                         var task = ParseArticle(article, dataObject);
                         dataTask.Add(task);
-                        _acount++;
+                        _ansCount++;
                     }
                 }
                 catch (Exception e)
                 {
-                    Logger.Write(e.Message + "\n" + e.StackTrace);
-                    throw e;
+                    lock (_logLock)
+                    {
+                        Logger.WriteLine("ParsePage() Exception: ", e);
+                    }
+
+                    if (dataTask.Count != 0)
+                    {
+                        var dataErr = await Task.WhenAll(dataTask);
+                        _answers.AddRange(dataErr);
+                    }
+                    
+                    throw;
                 }
 
                 var data = await Task.WhenAll(dataTask);
-                _storageManager.Archive.Data.AddRange(data);
-                
-                Task writeTask = null;
-                lock (_storageLock)
-                {
-                    if (_storageManager.Archive.Data.Count >= 10000)
-                    {
-                        writeTask = WriteToDisk(true);
-                        _storageManager.Archive.Data.Clear();
-                    }
-                }
-                
-                if (writeTask != null)
-                    await writeTask;
+                _answers.AddRange(data);
                 
                 html = await nextHtmlTask;
-
-                if (_isLastPage)
+                if (_isLastPage || _isDone)
                     break;
 
-                currentPageId = pageOb.NextPageID;
-                Console.WriteLine("# of Pages Parsed: " + _acount / 25);
+                currentPageId = pageOb.PageId;
+                PrintProgress(totalAnswerCount);
             }
-
-            Console.WriteLine("Answer Count: " + _acount);
         }
         
-        private async Task<DataObject> ParseArticle(HtmlNode question, DataObject dataObject)
+        private async Task<Answer> ParseArticle(HtmlNode question, Answer dataObject)
         {
             var tTask = ParseThreadInfo(question, dataObject);
             var qTask = ParseQuestion(question, dataObject);
@@ -160,52 +169,45 @@ namespace askfmArchiver
             return dataObject;
         }
 
-        /**
-         * If the option -d --endDate is used
-         * _isDone will be set to true here once the specified date
-         * is reached.
-         **/
-        private void ParseUniqueInfo(HtmlNode question, DataObject dataObject)
+        private void ParseUniqueInfo(HtmlNode question, Answer dataObject)
         {
             var nodes = question.SelectNodes(question.XPath + "//a[@class='streamItem_meta']");
-            var node = nodes.FirstOrDefault(nd => nd.Attributes.Contains("href")
-                                               && nd.Attributes.Contains("title")
-                                               && nd.Attributes.Contains("class")
-                                               && nd.GetAttributeValue("href", "") != "");
+            var node = nodes.First(nd => nd.Attributes.Contains("href")
+                                         && nd.Attributes.Contains("title")
+                                         && nd.Attributes.Contains("class")
+                                         && nd.GetAttributeValue("href", "") != "");
 
             var date = node.FirstChild.Attributes.First().Value;
             var id   = node.GetAttributeValue("href", "").Split("/").Last().Trim();
-            dataObject.AnswerID = id;
-            dataObject.Date     = DateTime.ParseExact(date, "yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
-            dataObject.Link     = _baseUrl + "/answers/" + dataObject.AnswerID;
-            var dateCompare = DateTime.Compare(dataObject.Date, _endDate);
+            dataObject.AnswerId = id;
+            dataObject.Date     = DateTime.ParseExact(date, "yyyy-MM-ddTHH:mm:ss", 
+                CultureInfo.InvariantCulture);
+            var dateCompare = DateTime.Compare(dataObject.Date, _stopAt);
 
             if (_isDone) return;
             lock (_lock)
             {
-                _isDone = dateCompare <= 0;
+                _isDone = dateCompare <= 0 || DoesAnswerExist(id);
             }
         }
-
-        private async Task ParseThreadInfo(HtmlNode thread, DataObject dataObject)
+        
+        private async Task ParseThreadInfo(HtmlNode thread, Answer dataObject)
         {
-            var id    = "";
-            var count = "0";
+            // threadID equals first ansID
+            var id    = dataObject.AnswerId;
+            
             if (HasThreads(thread))
             {
-                var threadNode = thread.SelectNodes(thread.XPath + "//a[@class='streamItem_threadDetails keep-asking']")
-                                       .First();
+                var threadNode = thread.SelectNodes(thread.XPath + 
+                                                    "//a[@class='streamItem_threadDetails keep-asking']")
+                    .First();
                 id    = threadNode.GetAttributeValue("href", "").Split("/").Last();
-                count = threadNode.InnerText.Trim().Split(" ")[0];
-
-                await ProcessThreads(id, dataObject.AnswerID);
             }
-
-            dataObject.ThreadID     = id;
-            dataObject.NumResponses = int.Parse(count);
+            
+            dataObject.ThreadId     = id;
         }
 
-        private async Task ParseQuestion(HtmlNode article, DataObject dataObject)
+        private async Task ParseQuestion(HtmlNode article, Answer dataObject)
         {
             var node        = article.SelectSingleNode(article.XPath + "//header[@class='streamItem_header']");
             var contentNode = node.SelectSingleNode(node.XPath + "//h2").ChildNodes;
@@ -214,44 +216,44 @@ namespace askfmArchiver
             if (authorNode != null)
             {
                 // remove the "/" from href
-                dataObject.AuthorID   = authorNode.GetAttributeValue("href", "").Substring(1);
+                dataObject.AuthorId   = authorNode.GetAttributeValue("href", "").Substring(1);
                 dataObject.AuthorName = authorNode.InnerText.Trim();
             }
 
             var question = contentNode.Aggregate("", (current, child)
-                                                     => current + child.Name switch
-                                                     {
-                                                         "#text" => child.InnerText,
-                                                         "a"     => "<link>" + child.InnerText + "<\\link>",
-                                                         _       => child.InnerText
-                                                     });
-            dataObject.Question = question.Trim();
+                => current + child.Name switch
+                {
+                    "#text" => child.InnerText,
+                    "a"     => "<link>" + child.InnerText + "<\\link>",
+                    _       => child.InnerText
+                });
+            dataObject.QuestionText = question.Trim();
         }
 
-        private async Task ParseAnswer(HtmlNode article, DataObject dataObject)
+        private async Task ParseAnswer(HtmlNode article, Answer dataObject)
         {
             var node = article.SelectSingleNode(article.XPath + "//div[@class='streamItem_content']") ??
                        article.SelectSingleNode(article.XPath + "//div[@class='asnwerCard_text']");
 
             if (node == null) return;
-            // elements are wrapped in <span> if the language isn't english
+            // elements are wrapped in <span> if the language is RTL
             if (node.FirstChild.Name == "span")
-                node = node.ChildNodes.FirstOrDefault();
+                node = node.ChildNodes.First();
 
             var answer = node.ChildNodes.Aggregate("", (current, child)
-                                                       => current + child.Name switch
-                                                       {
-                                                           "#text" => child.InnerText,
-                                                           "a"     => "<link>" + child.InnerText + "<\\link>",
-                                                           "hr"    => "\n\n",
-                                                           "span"  => "",
-                                                           _       => "\n"
-                                                       });
+                => current + child.Name switch
+                {
+                    "#text" => child.InnerText,
+                    "a"     => "<link>" + child.InnerText + "<\\link>",
+                    "hr"    => "\n\n",
+                    "span"  => "",
+                    _       => "\n"
+                });
 
-            dataObject.Answer = answer.Trim();
+            dataObject.AnswerText = answer.Trim();
         }
 
-        private async Task ParseVisuals(HtmlNode article, DataObject dataObject)
+        private async Task ParseVisuals(HtmlNode article, Answer dataObject)
         {
             var srcUrl = "";
             var node   = article.SelectSingleNode(article.XPath + "//div[@class='streamItem_visual']");
@@ -269,7 +271,11 @@ namespace askfmArchiver
             {
                 node = node.SelectSingleNode(node.XPath + "//a");
                 if (node == null) {
-                    Console.WriteLine("Error Parsing Visuals: " + dataObject.AnswerID);
+                    lock (_logLock)
+                    {
+                        Logger.WriteLine("ParseVisuals() Error: Couldn't parse visual with answerId: " 
+                                       + dataObject.AnswerId);
+                    }
                     return;
                 }
                 var visualType = node.GetAttributeValue("data-action", "");
@@ -278,24 +284,34 @@ namespace askfmArchiver
                 srcUrl = node.FirstChild.GetAttributeValue(attrName, "");
             }
 
-            if (_storageManager.VisualMap.TryGetValue(srcUrl, out var value))
-            {
-                dataObject.Visuals = value;
-            }
-            else
-            {
-                var extension = srcUrl.Split(".").Last().Trim();
-                var fileName  = dataObject.AnswerID;
-                fileName           += "." + extension.Trim();
-                dataObject.Visuals =  fileName;
-                _storageManager.VisualMap.Add(srcUrl, dataObject.Visuals);
-                await _client.Download(srcUrl, fileName);
-            }
+            var extension = srcUrl.Split(".").Last().Trim();
+            dataObject.VisualId =  dataObject.AnswerId;
+            dataObject.VisualUrl = srcUrl;
+            dataObject.VisualExt = extension;
+           
+            var client = new NetworkManager();
+            var fm = new FileManager();
+            
+            var fileName  = dataObject.AnswerId + "." + extension.Trim();;
+            var file = Path.Combine(_output,"visuals_" + _userId, fileName);
 
-            _vcount++;
+            file = await client.DownloadMedia(srcUrl, file);
+            if (file == "") return;
+            
+            var hash = fm.ComputeHash(file);
+            dataObject.VisualHash = hash;
+            if (hash == "") return;
+            
+            var duplicate = IsVisualDuplicate(hash);
+            if (duplicate == null) return;
+               
+            File.Delete(fileName);
+            dataObject.VisualId = duplicate.VisualId;
+            dataObject.VisualExt = duplicate.VisualExt;
+            dataObject.VisualHash = duplicate.VisualHash;
         }
-
-        private async Task ParseLikes(HtmlNode article, DataObject dataObject)
+        
+        private async Task ParseLikes(HtmlNode article, Answer dataObject)
         {
             var node      = article.SelectSingleNode(article.XPath + "//div[@class='heartButton']");
             var likesCunt = "";
@@ -310,67 +326,7 @@ namespace askfmArchiver
             dataObject.Likes = int.Parse(likesCunt);
         }
 
-        
-
-        private async Task ProcessThreads(string threadID, string answerID)
-        {
-            if (_parseThreads)
-            {
-                await ParseThreadIDs(threadID);
-            }
-            else
-            {
-                lock (_lock)
-                {
-                    if (ThreadExists(threadID))
-                    {
-                        if (!_storageManager.ThreadMap[threadID].Contains(answerID))
-                            _storageManager.ThreadMap[threadID].Add(answerID);
-                    }
-                    else
-                    {
-                        var set = new HashSet<string> {answerID};
-                        _storageManager.ThreadMap.Add(threadID, set);
-                    }
-                }
-            }
-        }
-        
-        /*
-         * if the option -t --thread is used
-         * this function will be called on threads
-         * that doesn't exist on the disk database
-         * to parse all answer ids associated with that thread
-         */
-        private async Task ParseThreadIDs(string threadID)
-        {
-            var set         = new HashSet<string>();
-            var url         = _baseUrl + "/threads/" + threadID;
-            var html        = await GetHtmlDoc(url);
-            var answerNodes = html.DocumentNode.SelectNodes("//a[@class='streamItem_meta']");
-
-            // start at i = 1 to skip the "updated x days ago" node
-            for (var i = 1; i < answerNodes.Count; i++)
-            {
-                var node     = answerNodes[i];
-                var answerId = node.GetAttributeValue("href", "").Split("/").Last();
-                set.Add(answerId);
-            }
-
-            lock (_lock)
-            {
-                if (!ThreadExists(threadID))
-                {
-                    _storageManager.ThreadMap.Add(threadID, set);
-                }
-                else
-                {
-                    _storageManager.ThreadMap[threadID].UnionWith(set);
-                }
-            }
-        }
-
-        private async Task<HtmlDocument> GetNextPage(HtmlDocument html, DataObject dataObject)
+        private async Task<HtmlDocument> GetNextPage(HtmlDocument html, Answer dataObject)
         {
             var nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next']");
             if (nextPageNode == null)
@@ -379,7 +335,7 @@ namespace askfmArchiver
                 return null;
             }
             var nextPageUri = nextPageNode.First().GetAttributeValue("href", "");
-            dataObject.NextPageID = nextPageUri.Split("=").Last();
+            dataObject.PageId = nextPageUri.Split("=").Last();
             var nextHtml = await GetHtmlDoc(BaseUrl + nextPageUri);
             
             return nextHtml;
@@ -391,19 +347,45 @@ namespace askfmArchiver
             var html    = "";
             try
             {
-                html = await _client.HttpRequest(url);
+                html = await _requestClient.HttpRequest(url);
             }
             catch (Exception e)
             {
-                Logger.Write("Message:\n" + e.Message + "\nStackTrace:\n" + e.StackTrace);
-                await WriteToDisk();
-                Environment.Exit(1);
+                lock (_logLock)
+                {
+                    Logger.WriteLine("GetHtmlDoc() Exception: ", e);
+                    Logger.WriteLine("Terminating Application..");
+                    Environment.Exit(1);
+                }
             }
 
             htmlDoc.LoadHtml(html);
             return htmlDoc;
         }
-        
+
+        private int GetAnswerCount(HtmlDocument html)
+        {
+            using var db = new MyDbContext();
+            var parsedCount = 0;
+            var text = html.
+                DocumentNode.
+                SelectSingleNode("//div[@class='profileStats_number profileTabAnswerCount']")
+                .InnerText;
+            var count = Regex.Replace(text, "[^0-9]", "");
+            
+            var answerCount =
+                int.Parse(count);
+
+            if (!DoesUserExist()) return answerCount;
+            parsedCount = db.Answers.Count(u => u.UserId == _userId);
+            answerCount = Math.Abs(parsedCount - answerCount);
+            return answerCount;
+        }
+        private void SetUserName(HtmlDocument html)
+        {
+            _userName = html.DocumentNode.SelectSingleNode("//div[@class='userName_status']")
+                .FirstChild.FirstChild.InnerText;
+        }
         private bool HasThreads(HtmlNode question)
         {
             var threadNode =
@@ -417,47 +399,110 @@ namespace askfmArchiver
             return node != null;
         }
 
-        private bool ThreadExists(string id)
+        private Answer IsVisualDuplicate(string hash)
         {
-            return _storageManager.ThreadMap.ContainsKey(id);
+            using var db = new MyDbContext();
+
+            var result = db.Answers
+                .Where(a => a.VisualHash == hash)
+                .OrderBy(a => a.Date)
+                .FirstOrDefault();
+            
+            return result;
         }
 
-        private async Task WriteToDisk(bool dataOnly = false)
+        private bool DoesAnswerExist(string ansId)
         {
-            var  archive  = _storageManager.Archive;
-            Task dataTask = null, threadsTask = null, visualTask = null;
+            using var db = new MyDbContext();
+            var exists = db.Answers
+                .Any(a => a.AnswerId == ansId);
+            return exists;
+        }
+
+        private async Task WriteToDb()
+        {
+            if (_answers.Count == 0)
+                return;
+
+            await using var db = new MyDbContext();
+            foreach (var c in _answers)
+            {
+                try
+                {
+                    db.Add(c);
+                }
+                catch (Exception e)
+                {
+                    lock (_logLock)
+                    {
+                        Logger.WriteLine("WriteToDb Exception: ", e);
+                        Logger.WriteLine("Writing data to disk..");
+                    }
+                    await WriteToDisk();
+                    Environment.Exit(1);
+                }
+            }
+
+            var dbTask =  db.SaveChangesAsync();
+            UpdateUser();
             
-            if (archive.Data.Count != 0)
+            await dbTask;
+        }
+        
+        private async Task WriteToDisk()
+        {
+            Task dataTask = null;
+            var fm = new FileManager();
+            
+            if (_answers.Count != 0)
             {
-                var filename = _username + "_" + archive.Data.First().
-                                                   Date.ToString("yy-MM-dd_HH-mm");
+                var filename = _userId + "_" + _answers.Last().
+                    Date.ToString("yy-MM-dd_HH-mm")
+                    .Replace("-", "");
 
-                archive.User              = _username;
-                archive.Header            = _header;
-                archive.QuestionCount     = archive.Data.Count;
-                archive.VisualCount       = _vcount;
-                archive.FirstQuestionDate = archive.Data.Last().Date;
-                archive.LastQuestionDate  = archive.Data.First().Date;
-                dataTask                  = _fm.SaveData(archive, filename, FileType.JSON);
+                var file = Path.Combine(_output, filename);
+                dataTask                  = fm.SaveData(_answers, filename, FileType.JSON);
             }
-
-            if (!dataOnly)
-            {
-                var threadFileName = DataTypes.Threads + "_" + _username;
-                var visualFileName = DataTypes.Visuals + "_" + _username;
-
-                if (_storageManager.ThreadMap.Count != 0)
-                    threadsTask = _fm.SaveData(_storageManager.ThreadMap, threadFileName, FileType.JSON);
-                if (_storageManager.VisualMap.Count != 0)
-                    visualTask = _fm.SaveData(_storageManager.VisualMap, visualFileName, FileType.JSON);
-            }
-
+            
             if (dataTask != null)
                 await dataTask;
-            if (threadsTask != null)
-                await threadsTask;
-            if (visualTask != null)
-                await visualTask;
         }
+
+        private void UpdateUser()
+        {
+            using var db = new MyDbContext();
+            var user = db.Users.First(u => u.UserId == _userId);
+            user.UserName = _userName;
+            user.LastQuestion = _answers.First().Date;
+            user.FirstQuestion = user.FirstQuestion == default ? _answers.Last().Date : user.FirstQuestion;
+            db.SaveChanges();
+        }
+
+        private void InsertUser()
+        {
+            using var db = new MyDbContext();
+            db.Add(new User
+            {
+                UserId =  _userId, FirstQuestion = default, LastQuestion = default, UserName = _userName
+            });
+
+            db.SaveChanges();
+        }
+
+        private bool DoesUserExist()
+        {
+            using var db = new MyDbContext();
+
+            return db.Users.FirstOrDefault(u => u.UserId == _userId) != null;
+        }
+        
+        private void PrintProgress(double totalCount)
+        {
+            var percent =  _ansCount / totalCount * 100;
+            if (percent >= 100)
+                percent = 95.00;
+            Console.Write("\rProgress: {0}%   ", Math.Round(percent, 2));
+        }
+
     }
 }
