@@ -6,7 +6,7 @@ A cross-platform tool to archive an ask.fm user profile.
 - sqlite3 (optional) - Needed if you want to inspect, query, or modify the database.
 
 ## Overview
-The tool archives a user profile and extracts all textual information and any attachments in the answer or the question section.
+The tool archives a user profile and extracts all textual information and any attachment in the answer or the question section.
 The only information it skips are polls.
 
 ## Usage
