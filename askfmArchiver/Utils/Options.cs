@@ -1,36 +1,36 @@
 using System;
 using CommandLine;
 
-namespace askfmArchiver.Utils
+namespace AskfmArchiver.Utils
 {
     public class Options
     {
-        [Option('u', "user", Required = true,
-                HelpText              = "The username of the askfm account to be parsed")]
-        public string Username { get; set; }
-
-        [Option('h', "title", Required = false,
-                HelpText               = "The title of the markdown file")]
-        public string title { get; set; } = "";
-
-        [Option('p', "page", Required = false,
-                HelpText              = "A number - The page iterator (id) at which parsing should start")]
-        public string PageIterator { get; set; } = "";
-
-        [Option('S', "stop-at", Required = false,
-                HelpText =
-                    "The date at which parsing should stop. Format of date should be: yyyy''MM''ddTHH''mm''ss")]
-        public DateTime EndDate { get; set; }
-
-        [Option('t', "threads", Required = false,
-                HelpText = "Use this options if you want thread ids and answers associated with the thread" +
-                           "to be stored in a separate file")]
-        public bool ParseThreads { get; set; }
+        [Option('u', "user USER", Required = true,
+            HelpText = "The userid of the askfm account")]
+        public string UserId { get; set; }
         
-        [Option('m', "markdown", Required = false)]
-        public bool md { get; set; }
+        [Option('t', "type TYPE", Required = true,
+            HelpText = "Specify job type: 'parse', 'markdown'")] 
+        public string Type { get; set; }
 
-        [Option('i', "input", Required = false)]
-        public string inputPath { get; set; } = @"input/";
+        [Option('p', "page ITERATOR", Required = false,
+            HelpText              = "The page iterator (id) at which parsing should start. Useful if parsing" +
+                                    " was interrupted.", Default = "")]
+        public string PageIterator { get; set; }
+
+        [Option('s', "stop-at", Required = false,
+            HelpText =
+                "The date at which parsing should stop. Date should be in the following format: " +
+                "yyyy''MM''ddTHH''mm''ss")]
+        public DateTime StopAt { get; set; }
+        
+
+        [Option('i', "input", Required = false, Default = @"./input/", Hidden = true)]
+        public string Input { get; set; }
+        
+        [Option('o', "out FOLDER", Required = false, Default = @"./output/", 
+            HelpText = "Specify output folder where any downloaded or generated files will be saved.")]
+        public string Output { get; set; }
+        
     }
 }
