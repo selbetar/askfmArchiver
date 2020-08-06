@@ -5,13 +5,25 @@ namespace askfmArchiver.Utils
 {
     internal static class Logger
     {
-        private const string Path = @"output";
+   
+        private static string _file;
+        private static readonly TextWriter ErrorWriter = Console.Error;
 
-        internal static void Write(string msg)
+        internal static void SetLogFile(string file)
         {
-            Directory.CreateDirectory(Path);
-            File.AppendAllText(@"output/Log" + DateTime.Now.ToString("yyyy''MM''ddTHH''mm''ss"),
-                               msg + "\n");
+            _file = file;
+        }
+        
+        internal static void WriteLine(string line)
+        {
+            ErrorWriter.WriteLine(line);
+            File.AppendAllText(_file, line);
+        }
+        internal static void WriteLine(string line, Exception e)
+        { 
+            var error = line + Environment.NewLine + e.Message;
+            ErrorWriter.WriteLine(error);
+            File.AppendAllText(_file, error);
         }
     }
 }

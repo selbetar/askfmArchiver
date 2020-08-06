@@ -1,156 +1,107 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Reflection.Metadata;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Unicode;
 using System.Threading.Tasks;
 using askfmArchiver.Enums;
-using askfmArchiver.Objects;
-using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace askfmArchiver.Utils
 {
     public class FileManager
     {
-        private static readonly StorageManager Storage = StorageManager.GetInstance();
-        private const string Path = @"output/";
-
-        public async Task SaveData<T>(T data, string filename, FileType type)
+        private static string _outDir;
+        public FileManager()
         {
-            Directory.CreateDirectory(Path);
+            _outDir = "";
+        }
+        
+        public string ComputeHash(string file)
+        {
+            HashAlgorithm sha1Hash = SHA1.Create();
+            byte[] hashValue;
+            try
+            {
+                var fStream = File.OpenRead(file);
+                fStream.Position = 0;
+                hashValue = sha1Hash.ComputeHash(fStream);
+                fStream.Close();
+            }
+            catch (Exception e)
+            {
+                Logger.WriteLine("ComputeHash Exception: ", e);
+                return "";
+            }
             
+            var sBuilder = new StringBuilder();
+            foreach (var by in hashValue)
+            {
+                sBuilder.Append(by.ToString("x2"));
+            }
+            
+            return sBuilder.ToString();
+        }
+        
+        public async Task SaveData<T>(T data, string file, FileType type)
+        {
+            var dir = Path.GetDirectoryName(file);
+
+            if (_outDir != "" || !CheckDir(dir))
+            {
+                var filename = Path.GetFileName(file);
+                file = Path.Combine(_outDir, filename);
+            }
+
             switch (type)
             {
                 case FileType.JSON:
-                    filename += ".json";
-                    await SaveJson(data, filename);
+                    file += ".json";
+                    await SaveJson(data, file);
                     break;
                 case FileType.MARKDOWN:
-                    filename += ".md";
-                    await SaveMarkDown(data, filename);
+                    file += ".md";
+                    await SaveMarkDown(data, file);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
         }
-
-        public async Task PopulateStorage(DataTypes type, string username, 
-                                          string searchPattern = "", string path = @"input/")
-        {
-            if (!Directory.Exists(path))
-            {
-                var writer = Console.Error;
-                writer.WriteLine("Invalid Path: " + path);
-                return;
-            }
-
-            if (searchPattern == "")
-            {
-                searchPattern = "*" + type + "_" + username + "*.json";
-            }
-            
-            var files = Directory.GetFiles(path, searchPattern);
-            var tasks = new List<Task<string>>();
-            tasks.AddRange(files.Select(file => File.ReadAllTextAsync(file)));
-            var filesData = await Task.WhenAll(tasks);
-            switch (type)
-            {
-                case DataTypes.Archive:
-                    PopulateArchiveList(filesData);
-                    break;
-                case DataTypes.Threads:
-                    PopulateThreadMap(filesData);
-                    break;
-                case DataTypes.Visuals:
-                    PopulateVisualMapMap(filesData);
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
-        }
-
-        private void PopulateThreadMap(IEnumerable<string> filesData)
-        {
-            foreach (var data in filesData)
-            {
-                var obj = JsonSerializer.Deserialize<Dictionary<string, HashSet<string>>>(data);
-                foreach (var (key, value) in obj)
-                {
-                    Storage.ThreadMap.TryAdd(key, value);
-                }
-            }
-        }
-
-        private void PopulateVisualMapMap(IEnumerable<string> filesData)
-        {
-            foreach (var data in filesData)
-            {
-                var obj = JsonSerializer.Deserialize<Dictionary<string, string>>(data);
-                foreach (var (key, value) in obj)
-                {
-                    Storage.VisualMap.TryAdd(key, value);
-                }
-            }
-        }
-
-        private void PopulateArchiveList(IEnumerable<string> filesData)
-        {
-            var      answers = new List<DataObject>();
-            string   user    = "",           header = "", other = "";
-            int      qcount  = 0,            vcount = 0;
-            DateTime first   = DateTime.Now, last   = DateTime.Now;
-            
-            foreach (var data in filesData)
-            {
-                var obj = JsonSerializer.Deserialize<Archive>(data);
-                
-                user   =  obj.User;
-                header =  obj.Header;
-                other  =  obj.Other;
-                qcount += obj.QuestionCount;
-                vcount += obj.VisualCount;
-                first  =  first.CompareTo(obj.FirstQuestionDate) < 0 ? first : obj.FirstQuestionDate;
-                last   =  last.CompareTo(obj.LastQuestionDate) > 0 ? last : obj.LastQuestionDate;
-                
-                answers.AddRange(obj.Data);
-            }
-            
-            answers.Sort((e1, e2) => e2.Date.CompareTo(e1.Date));
-            
-            var archive = new Archive
-                          {
-                              Data              = answers,
-                              User              = user,
-                              Header            = header,
-                              Other             = other,
-                              QuestionCount     = qcount,
-                              VisualCount       = vcount,
-                              FirstQuestionDate = first,
-                              LastQuestionDate  = last
-                          };
-            
-            Storage.Archive = archive;
-        }
-
-        private async Task SaveJson<T>(T data, string filename)
+        private async Task SaveJson<T>(T data, string file)
         {
             var options = new JsonSerializerOptions
-                          {
-                              WriteIndented = true,
-                              Encoder       = JavaScriptEncoder.Create(UnicodeRanges.All)
-                          };
+            {
+                WriteIndented = true,
+                Encoder       = JavaScriptEncoder.Create(UnicodeRanges.All)
+            };
             var json = JsonSerializer.Serialize(data, options);
-            await File.WriteAllTextAsync(Path + filename, json, Encoding.UTF8);
+            await File.WriteAllTextAsync(file, json, Encoding.UTF8);
+        }
+        private async Task SaveMarkDown<T>(T data, string file)
+        {
+            var lines = (List<string>) (object) data;
+            await File.WriteAllLinesAsync(file, lines, Encoding.UTF8);
+        }
+        public bool CheckDir(string dir)
+        {
+            try
+            {
+                Directory.CreateDirectory(dir);
+            }
+            catch (Exception e)
+            {
+                var errorWriter = Console.Error;
+                Logger.WriteLine("SaveData Error: ", e);
+                errorWriter.WriteLine("Data will be written to ./output");
+                Directory.CreateDirectory(@"output");
+                _outDir = "output";
+                return false;
+            }
+
+            return true;
         }
 
-        private async Task SaveMarkDown<T>(T data, string filename)
-        {
-            List<string> lines = (List<string>) (object) data;
-            await File.WriteAllLinesAsync(Path + filename, lines, Encoding.UTF8);
-        }
     }
 }
