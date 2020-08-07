@@ -37,7 +37,7 @@ namespace askfmArchiver
             var lines = new List<string>();
             var filename = _userId + "_";
             var fileCount = 0;
-            var file = "";
+            string file;
             foreach (var content in answers.Select(ProcessData))
             {
                 lines.Add(content);
@@ -156,8 +156,8 @@ namespace askfmArchiver
         
         private string ProcessVisuals(Answer ans, FileType type)
         {
+            string visuals;
             var visualFile = ans.VisualId + "." + ans.VisualExt;
-            var visuals = "";
             var path = Path.Combine(_outDir,"visuals_" + ans.UserId, visualFile);
             
             if (type != FileType.IMG)

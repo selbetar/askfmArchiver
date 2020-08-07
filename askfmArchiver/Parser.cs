@@ -254,7 +254,7 @@ namespace askfmArchiver
 
         private async Task ParseVisuals(HtmlNode article, Answer dataObject)
         {
-            var srcUrl = "";
+            string srcUrl;
             var node   = article.SelectSingleNode(article.XPath + "//div[@class='streamItem_visual']");
             if (node == null) return;
             var videoNode = node.SelectSingleNode(node.XPath + "//div[@class='rsp-eql-desktop']");
@@ -291,7 +291,7 @@ namespace askfmArchiver
             var client = new NetworkManager();
             var fm = new FileManager();
             
-            var fileName  = dataObject.AnswerId + "." + extension.Trim();;
+            var fileName  = dataObject.AnswerId + "." + extension.Trim();
             var file = Path.Combine(_output,"visuals_" + _userId, fileName);
 
             file = await client.DownloadMedia(srcUrl, file);
@@ -304,7 +304,7 @@ namespace askfmArchiver
             var duplicate = IsVisualDuplicate(hash);
             if (duplicate == null) return;
                
-            File.Delete(fileName);
+            File.Delete(file);
             dataObject.VisualId = duplicate.VisualId;
             dataObject.VisualExt = duplicate.VisualExt;
             dataObject.VisualHash = duplicate.VisualHash;
@@ -365,7 +365,6 @@ namespace askfmArchiver
         private int GetAnswerCount(HtmlDocument html)
         {
             using var db = new MyDbContext();
-            var parsedCount = 0;
             var text = html.
                 DocumentNode.
                 SelectSingleNode("//div[@class='profileStats_number profileTabAnswerCount']")
@@ -376,7 +375,7 @@ namespace askfmArchiver
                 int.Parse(count);
 
             if (!DoesUserExist()) return answerCount;
-            parsedCount = db.Answers.Count(u => u.UserId == _userId);
+            var parsedCount = db.Answers.Count(u => u.UserId == _userId);
             answerCount = Math.Abs(parsedCount - answerCount);
             return answerCount;
         }
@@ -460,7 +459,7 @@ namespace askfmArchiver
                     .Replace("-", "");
 
                 var file = Path.Combine(_output, filename);
-                dataTask                  = fm.SaveData(_answers, filename, FileType.JSON);
+                dataTask                  = fm.SaveData(_answers, file, FileType.JSON);
             }
             
             if (dataTask != null)

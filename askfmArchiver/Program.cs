@@ -14,6 +14,8 @@ namespace askfmArchiver
     {
         private static async Task Main(string[] args)
         {
+	        var dbTask = CreateTables();
+	        
             string userId = "", pageIterator = "", input = ""  , output = "";
             var stopAt = DateTime.Now;
             var type = JobType.NONE;
@@ -52,10 +54,10 @@ namespace askfmArchiver
             var logFile = Path.Combine(output, logFileName);
             Logger.SetLogFile(logFile);
 			
+            await dbTask;
             switch (type)
             {
 	            case JobType.PARSE:
-		            CreateTables();
 		            var askfmParser = new Parser(userId, output, pageIterator, stopAt);
 		            await askfmParser.Parse();
 		            break;
@@ -85,7 +87,7 @@ namespace askfmArchiver
             Environment.Exit(1);
         }
         
-        private static int CreateTables()
+        private static async Task CreateTables()
         {
             var con = new SqliteConnectionStringBuilder()
             {
@@ -93,13 +95,10 @@ namespace askfmArchiver
                 RecursiveTriggers = true,
                 ForeignKeys = true
             }.ToString();
-		    
-            using var connection = new SqliteConnection(con);
+
+            await using var connection = new SqliteConnection(con);
             string[] queries =
             {
-                // @"DROP TABLE IF EXISTS pdfgen",
-                // @"DROP TABLE IF EXISTS answers",
-                // @"DROP TABLE IF EXISTS users",
                 @"CREATE TABLE IF NOT EXISTS Users(
 	                UserID TEXT PRIMARY KEY,
 	                UserName TEXT,
@@ -135,17 +134,17 @@ namespace askfmArchiver
 		    
             connection.Open();
             var command = connection.CreateCommand();
-            var status = 0;
+            var tasks = new List<Task<int>>();
             foreach (var query in queries)
             {
                 command.CommandText = query;
-                status = command.ExecuteNonQuery();
+                var tsk = command.ExecuteNonQueryAsync();
+                tasks.Add(tsk);
             }
-            
+
+            await Task.WhenAll(tasks);
             command.Dispose();
             connection.Close();
-            
-            return status;
         }
     }
 }
