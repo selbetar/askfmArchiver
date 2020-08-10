@@ -21,7 +21,7 @@ namespace askfmArchiver.Utils
         }
         internal static void WriteLine(string line, Exception e)
         { 
-            var error = line + Environment.NewLine + e.Message;
+            var error = line + Environment.NewLine + e.Message + Environment.NewLine + e.StackTrace;
             ErrorWriter.WriteLine(error);
             File.AppendAllText(_file, error);
         }
