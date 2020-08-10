@@ -55,7 +55,7 @@ namespace askfmArchiver
             var info = GenerateHeader();
             UpdatePdfTable(answers.Last().AnswerId, answers.Last().Date);
             await SaveFile(new List<string> {info}, "info_" + _userId);
-            Console.WriteLine("Markdown generation has finished: Generated {0} files", fileCount);
+            Console.WriteLine("Markdown generation has finished: Generated {0} files", fileCount + 1);
         }
 
         private async Task SaveFile(List<string> lines, string filename)
