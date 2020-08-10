@@ -313,16 +313,16 @@ namespace askfmArchiver
         private async Task ParseLikes(HtmlNode article, Answer dataObject)
         {
             var node      = article.SelectSingleNode(article.XPath + "//div[@class='heartButton']");
-            var likesCunt = "";
-            foreach (var child in node.ChildNodes)
+            node = node.SelectSingleNode("//a[@class='counter']");
+            var likesCount = node.InnerText.Trim() == "" ? "0" : node.InnerText.Trim();
+            likesCount = Regex.Replace(likesCount, "[^0-9]", "");
+            
+            if (!int.TryParse(likesCount, out var count))
             {
-                if (child.GetAttributeValue("class", "") != "counter")
-                {
-                    likesCunt = node.InnerText.Trim() == "" ? "0" : node.InnerText.Trim();
-                }
+                Logger.WriteLine("Couldn't parse likes count for answer with answerId: " + dataObject.AnswerId);
+                count = 0;
             }
-
-            dataObject.Likes = int.Parse(likesCunt);
+            dataObject.Likes = count;
         }
 
         private async Task<HtmlDocument> GetNextPage(HtmlDocument html, Answer dataObject)
