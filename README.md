@@ -34,7 +34,7 @@ OPTIONS:
  ```
 
 ### Where is the parsed data stored?
-Data is stored in a sqlite db file called **data.db** that gets created in the output folder once parsing starts. 
+Data is stored in a sqlite db file called **data.db** that gets created in the tool's folder once parsing starts. 
 
 ### Markdown
 The tool can also generate a markdown file of the parsed data that can be converted to HTML or PDF (using another tool) if the type is set to **markdown**.
