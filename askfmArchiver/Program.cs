@@ -23,7 +23,7 @@ namespace askfmArchiver
             CommandLine.Parser.Default.ParseArguments<Options>(args)
                 .WithParsed(opts =>
                 {
-                    userId     = opts.UserId;
+                    userId     = opts.UserId.ToLower();
                     pageIterator = opts.PageIterator;
                     stopAt      = opts.StopAt;
                     input    = opts.Input;

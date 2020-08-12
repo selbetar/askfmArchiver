@@ -20,7 +20,7 @@ namespace askfmArchiver
         
         public MarkDown(string userId, string outDir = @"./output")
         {
-            _userId = userId;
+            _userId = userId.ToLower();
             _outDir = outDir;
             _threadMap = new Dictionary<string, int>();
         }
