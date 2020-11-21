@@ -273,7 +273,7 @@ namespace askfmArchiver
                     lock (_logLock)
                     {
                         Logger.WriteLine("ParseVisuals() Error: Couldn't parse visual with answerId: " 
-                                       + dataObject.AnswerId);
+                                         + dataObject.AnswerId);
                     }
                     return;
                 }
@@ -365,14 +365,13 @@ namespace askfmArchiver
         private int GetAnswerCount(HtmlDocument html)
         {
             using var db = new MyDbContext();
-            var text = html.
+            var node = html.
                 DocumentNode.
-                SelectSingleNode("//div[@class='profileStats_number profileTabAnswerCount']")
-                .InnerText;
+                SelectSingleNode("//div[@class='profileStats_number profileTabAnswerCount']");
+            var text = node.GetAttributeValue("title", "");
             var count = Regex.Replace(text, "[^0-9]", "");
             
-            var answerCount =
-                int.Parse(count);
+            var answerCount = int.Parse(count);
 
             if (!DoesUserExist()) return answerCount;
             var parsedCount = db.Answers.Count(u => u.UserId == _userId);
