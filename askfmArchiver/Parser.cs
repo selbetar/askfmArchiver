@@ -313,7 +313,7 @@ namespace askfmArchiver
         private async Task ParseLikes(HtmlNode article, Answer dataObject)
         {
             var node      = article.SelectSingleNode(article.XPath + "//div[@class='heartButton']");
-            node = node.SelectSingleNode("//a[@class='counter']");
+            node = node.SelectSingleNode(node.XPath + "//a[@class='counter']");
             var likesCount = node.InnerText.Trim() == "" ? "0" : node.InnerText.Trim();
             likesCount = Regex.Replace(likesCount, "[^0-9]", "");
             
