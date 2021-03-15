@@ -355,3 +355,6 @@ input/
 
 output/
 *.txt
+*.db
+.vscode
+*.DotSettings
