@@ -209,8 +209,8 @@ namespace askfmArchiver
         private async Task ParseQuestion(HtmlNode article, Answer dataObject)
         {
             var node        = article.SelectSingleNode(article.XPath + "//header[@class='streamItem_header']");
-            var contentNode = node.SelectSingleNode(node.XPath + "//h2").ChildNodes;
-            var authorNode  = node.SelectSingleNode(node.XPath + "//a[@class='author']");
+            var contentNode = node.SelectSingleNode(node.XPath + "//h3").ChildNodes;
+            var authorNode  = node.SelectSingleNode(node.XPath + "//a[@class='author ']");
 
             if (authorNode != null)
             {
@@ -380,8 +380,8 @@ namespace askfmArchiver
         }
         private void SetUserName(HtmlDocument html)
         {
-            _userName = html.DocumentNode.SelectSingleNode("//div[@class='userName_status']")
-                .FirstChild.FirstChild.InnerText;
+            _userName = html.DocumentNode.SelectSingleNode("//h1[@class='userName_status']")
+                .FirstChild.InnerText;
         }
         private bool HasThreads(HtmlNode question)
         {
