@@ -79,7 +79,7 @@ namespace askfmArchiver
             var enumerable = errs as Error[] ?? errs.ToArray();
             foreach (var error in enumerable)
             {
-                if (!enumerable.IsVersion())
+                if (!enumerable.IsVersion() && !enumerable.IsHelp())
                 {
                     Console.WriteLine(error.ToString());
                 }
