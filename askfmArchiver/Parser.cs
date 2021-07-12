@@ -278,9 +278,22 @@ namespace askfmArchiver
                     return;
                 }
                 var visualType = node.GetAttributeValue("data-action", "");
-                dataObject.VisualType = visualType.Contains("Gif") ? FileType.GIF : FileType.IMG;
-                var attrName = visualType.Contains("Gif") ? "data-src" : "src";
-                srcUrl = node.FirstChild.GetAttributeValue(attrName, "");
+                switch (visualType){
+                    case "GifToggle":
+                    dataObject.VisualType = FileType.GIF;
+                    var attrName = "data-src";
+                    srcUrl = node.FirstChild.GetAttributeValue(attrName, "");
+                    break;
+
+                    case "ImageOpen":
+                    dataObject.VisualType = FileType.IMG;
+                    var picNode = node.SelectSingleNode(node.XPath + "//picture/source");
+                    srcUrl = picNode.GetAttributeValue("srcset", "err: img src attribute not found");
+                    break;
+
+                    default:
+                    return;
+                }
             }
 
             var extension = srcUrl.Split(".").Last().Trim();
