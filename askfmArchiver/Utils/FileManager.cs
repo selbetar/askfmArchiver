@@ -13,28 +13,20 @@ namespace askfmArchiver.Utils
 {
     public class FileManager : IFileManager
     {
-        private static string _outDir;
         public FileManager()
         {
-            _outDir = "";
         }
 
         public string ComputeHash(string file)
         {
             HashAlgorithm sha1Hash = SHA1.Create();
             byte[] hashValue;
-            try
-            {
-                var fStream = File.OpenRead(file);
-                fStream.Position = 0;
-                hashValue = sha1Hash.ComputeHash(fStream);
-                fStream.Close();
-            }
-            catch (Exception e)
-            {
-                Logger.WriteLine("ComputeHash Exception: ", e);
-                return "";
-            }
+
+            var fStream = File.OpenRead(file);
+            fStream.Position = 0;
+            hashValue = sha1Hash.ComputeHash(fStream);
+            fStream.Close();
+
 
             var sBuilder = new StringBuilder();
             foreach (var by in hashValue)
@@ -45,15 +37,11 @@ namespace askfmArchiver.Utils
             return sBuilder.ToString();
         }
 
-        public async Task SaveData<T>(T data, string file, FileType type)
+        public async Task<bool> SaveData<T>(T data, string file, FileType type)
         {
             var dir = Path.GetDirectoryName(file);
 
-            if (_outDir != "" || !CheckDir(dir))
-            {
-                var filename = Path.GetFileName(file);
-                file = Path.Combine(_outDir, filename);
-            }
+            CheckDir(dir);
 
             switch (type)
             {
@@ -68,6 +56,8 @@ namespace askfmArchiver.Utils
                 default:
                     throw new ArgumentOutOfRangeException();
             }
+
+            return true;
         }
         private async Task SaveJson<T>(T data, string file)
         {
@@ -84,23 +74,9 @@ namespace askfmArchiver.Utils
             var lines = (List<string>)(object)data;
             await File.WriteAllLinesAsync(file, lines, Encoding.UTF8);
         }
-        public bool CheckDir(string dir)
+        public void CheckDir(string dir)
         {
-            try
-            {
-                Directory.CreateDirectory(dir);
-            }
-            catch (Exception e)
-            {
-                var errorWriter = Console.Error;
-                Logger.WriteLine("SaveData Error: ", e);
-                errorWriter.WriteLine("Data will be written to ./output");
-                Directory.CreateDirectory(@"output");
-                _outDir = "output";
-                return false;
-            }
-
-            return true;
+            Directory.CreateDirectory(dir);
         }
 
     }
