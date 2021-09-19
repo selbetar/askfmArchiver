@@ -167,17 +167,14 @@ namespace askfmArchiver
 
         private async Task<Answer> ParseArticle(HtmlNode question, Answer dataObject)
         {
-            var tTask = ParseThreadInfo(question, dataObject);
-            var qTask = ParseQuestion(question, dataObject);
-            var aTask = ParseAnswer(question, dataObject);
-            var vTask = ParseVisuals(question, dataObject);
-            var lTask = ParseLikes(question, dataObject);
+            var tasks = new Task[5];
+            tasks[0] = Task.Run(() => ParseThreadInfo(question, dataObject));
+            tasks[1] = Task.Run(() => ParseQuestion(question, dataObject));
+            tasks[2] = Task.Run(() => ParseAnswer(question, dataObject));
+            tasks[3] = Task.Run(() => ParseLikes(question, dataObject));
+            tasks[4] = ParseVisuals(question, dataObject);
 
-            await tTask;
-            await qTask;
-            await aTask;
-            await vTask;
-            await lTask;
+            await Task.WhenAll(tasks);
             return dataObject;
         }
 
@@ -211,7 +208,7 @@ namespace askfmArchiver
             return true;
         }
 
-        private async Task ParseThreadInfo(HtmlNode thread, Answer dataObject)
+        private void ParseThreadInfo(HtmlNode thread, Answer dataObject)
         {
             // threadID equals first ansID
             var id = dataObject.AnswerId;
@@ -227,12 +224,11 @@ namespace askfmArchiver
             dataObject.ThreadId = id;
         }
 
-        private async Task ParseQuestion(HtmlNode article, Answer dataObject)
+        private void ParseQuestion(HtmlNode article, Answer dataObject)
         {
             var node = article.SelectSingleNode(article.XPath + "//header[@class='streamItem_header']");
-            var contentNode = node.SelectSingleNode(node.XPath + "//h3").ChildNodes;
-            var authorNode = node.SelectSingleNode(node.XPath + "//a[@class='author ']");
 
+            var authorNode = node.SelectSingleNode(node.XPath + "//a[@class='author ']");
             if (authorNode != null)
             {
                 // remove the "/" from href
@@ -240,6 +236,15 @@ namespace askfmArchiver
                 dataObject.AuthorName = authorNode.InnerText.Trim();
             }
 
+            var contentNodes = node.SelectSingleNode(node.XPath + "//h3");
+            if (contentNodes == null)
+            {
+                _log.LogWarning("ParseQuestion(): Failed to extract the question's text for {userId}:{answerId}",
+                    dataObject.UserId, dataObject.AnswerId);
+                return;
+            }
+
+            var contentNode = contentNodes.ChildNodes;
             var question = contentNode.Aggregate("", (current, child)
                 => current + child.Name switch
                 {
@@ -250,14 +255,20 @@ namespace askfmArchiver
             dataObject.QuestionText = question.Trim();
         }
 
-        private async Task ParseAnswer(HtmlNode article, Answer dataObject)
+        private void ParseAnswer(HtmlNode article, Answer dataObject)
         {
             var node = article.SelectSingleNode(article.XPath + "//div[@class='streamItem_content']") ??
                        article.SelectSingleNode(article.XPath + "//div[@class='asnwerCard_text']");
 
-            if (node == null) return;
+            if (node == null)
+            {
+                _log.LogInformation("ParseAnswer(): answer with answerID: {answerId} has no text.",
+                    dataObject.AnswerId);
+                return;
+            }
+
             // elements are wrapped in <span> if the language is RTL
-            if (node.FirstChild.Name == "span")
+            if (node.FirstChild is { Name: "span" })
                 node = node.ChildNodes.First();
 
             var answer = node.ChildNodes.Aggregate("", (current, child)
@@ -380,16 +391,28 @@ namespace askfmArchiver
             return srcUrl;
         }
 
-        private async Task ParseLikes(HtmlNode article, Answer dataObject)
+        private void ParseLikes(HtmlNode article, Answer dataObject)
         {
-            var node = article.SelectSingleNode(article.XPath + "//div[@class='heartButton']");
-            node = node.SelectSingleNode(node.XPath + "//a[@class='counter']");
-            var likesCount = node.InnerText.Trim() == "" ? "0" : node.InnerText.Trim();
+            string likesCount;
+            try
+            {
+                var node = article.SelectSingleNode(article.XPath + "//div[@class='heartButton']");
+                node = node.SelectSingleNode(node.XPath + "//a[@class='counter']");
+                likesCount = node.InnerText.Trim() == "" ? "0" : node.InnerText.Trim();
+            }
+            catch (ArgumentNullException)
+            {
+                _log.LogWarning("ParseLikes(): Couldn't extract the like count for {userId}:{answerId}",
+                    dataObject.UserId, dataObject.AnswerId);
+                return;
+            }
+
             likesCount = Regex.Replace(likesCount, "[^0-9]", "");
 
             if (!int.TryParse(likesCount, out var count))
             {
-                Logger.WriteLine("Couldn't parse likes count for answer with answerId: " + dataObject.AnswerId);
+                _log.LogWarning("ParseLikes(): Couldn't parse like count for {userId}:{answerId}",
+                    dataObject.UserId, dataObject.AnswerId);
                 count = 0;
             }
             dataObject.Likes = count;
