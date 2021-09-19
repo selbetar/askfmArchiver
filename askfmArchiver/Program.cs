@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using askfmArchiver.Models;
 using askfmArchiver.Utils;
 using CommandLine;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,16 +34,15 @@ namespace askfmArchiver
                         .ReadFrom.Configuration(builder.Build())
                         .Enrich.FromLogContext()
                         .WriteTo.Console()
-                        .WriteTo.File("log_askfm.txt", LogEventLevel.Information)
+                        .WriteTo.File("log_askfm.log", LogEventLevel.Warning)
                         .CreateLogger();
 
                     host = Host.CreateDefaultBuilder()
                         .ConfigureServices((context, services) =>
                         {
-                            services.AddSingleton<IFileManager, FileManager>();
-                            services.AddSingleton<IOptions>(options);
-                            services.AddDbContext<MyDbContext>(opts =>
-                                opts.UseSqlite(context.Configuration.GetConnectionString("DefaultConnection")));
+
+                            CreateTables(context.Configuration.GetConnectionString("DefaultConnection"));
+
                             if (options.Archive)
                             {
                                 services.AddTransient<IParser, Parser>();
@@ -53,6 +53,11 @@ namespace askfmArchiver
                             {
                                 services.AddTransient<IMarkDown, MarkDown>();
                             }
+
+                            services.AddDbContext<MyDbContext>(opts =>
+                                opts.UseSqlite(context.Configuration.GetConnectionString("DefaultConnection")));
+                            services.AddSingleton<IFileManager, FileManager>();
+                            services.AddSingleton<IOptions>(options);
                         })
                         .UseSerilog()
                         .Build();
@@ -114,5 +119,56 @@ namespace askfmArchiver
                 .ConfigureServices((context, services) =>
                     services.AddDbContext<MyDbContext>(opts =>
                         opts.UseSqlite(context.Configuration.GetConnectionString("DefaultConnection"))));
+
+
+        private static void CreateTables(string connectionStr)
+        {
+            using var connection = new SqliteConnection(connectionStr);
+            string[] queries =
+            {
+                @"CREATE TABLE IF NOT EXISTS Users(
+	                UserID TEXT PRIMARY KEY,
+	                UserName TEXT,
+	                LastQuestion DateTime DEFAULT 0,
+	                FirstQuestion DateTime DEFAULT 0)"
+                ,
+                @"CREATE TABLE IF NOT EXISTS Answers (
+					UserID TEXT NOT NULL,
+   					AnswerID TEXT NOT NULL,
+   					AnswerText TEXT,
+					QuestionText TEXT NOT NULL,
+					AuthorID TEXT,
+					AuthorName TEXT,
+					Date DateTime NOT NULL,
+					Likes INTEGER NOT NULL,
+					VisualID  TEXT,
+					VisualType INTEGER,
+					VisualUrl TEXT,
+					VisualExt TEXT,
+					VisualHash TEXT,
+					ThreadID TEXT NOT NULL,
+					PageID TEXT,
+					PRIMARY KEY (AnswerID),
+				    FOREIGN KEY (UserID) 
+				        REFERENCES Users (UserID) 
+				            ON DELETE CASCADE 
+				            ON UPDATE NO ACTION)"
+                ,
+                @"CREATE TABLE IF NOT EXISTS PDFGen (UserID TEXT, StopAt DateTime, AnswerID Text, PRIMARY KEY (UserID) 
+				FOREIGN KEY (UserID)
+        		REFERENCES Users (UserID))",
+            };
+
+            connection.Open();
+            var command = connection.CreateCommand();
+            foreach (var query in queries)
+            {
+                command.CommandText = query;
+                command.ExecuteNonQuery();
+            }
+
+            command.Dispose();
+            connection.Close();
+        }
     }
 }
