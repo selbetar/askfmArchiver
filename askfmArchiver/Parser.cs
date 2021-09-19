@@ -18,7 +18,6 @@ namespace askfmArchiver
     {
         private const string BaseUrl = "https://ask.fm/";
         private readonly List<Answer> _answers;
-
         private string _userName;
 
         private readonly MyDbContext _dbContext;
@@ -27,18 +26,20 @@ namespace askfmArchiver
         private readonly INetworkManager _networkManager;
         private readonly IFileManager _fileManager;
 
+        private Dictionary<string, Answer> _visualHashs;
+        private HashSet<string> _answerId;
 
         private bool _isDone;
         private bool _isLastPage;
 
-        private int _extractedCount; // Tracks the number of answers that have been extracted. Used for progress reporting.
-        private int _totalAnswerCount; // The count of the user's total number of answers. Used for progress reporting.
+        private double _totalAnswerCount; // The count of the user's total number of answers. Used for progress reporting.
         private double _lastPercentage; // The last reported percentage. Used for progress reporting.
 
         public Parser(MyDbContext dbContext, ILogger<Parser> logger, IOptions options, INetworkManager networkManager, IFileManager fileManager)
         {
             _answers = new List<Answer>();
-
+            _visualHashs = new Dictionary<string, Answer>();
+            _answerId = new HashSet<string>();
 
             _dbContext = dbContext;
             _log = logger;
@@ -46,18 +47,17 @@ namespace askfmArchiver
             _networkManager = networkManager;
             _fileManager = fileManager;
 
-            _dbContext.Database.Migrate();
-
             _isDone = false;
             _isLastPage = false;
 
-            _totalAnswerCount = 0;
+            _totalAnswerCount = 0.0;
+            _lastPercentage = 0.0;
         }
 
 
         public async Task Parse()
         {
-            SanityCheck();
+            Init();
 
             var url = CreateUrl(BaseUrl, _options.UserId);
             if (_options.PageIterator != "")
@@ -80,6 +80,7 @@ namespace askfmArchiver
 
             SetUserName(html);
             _totalAnswerCount = ExtractAnswerCount(html);
+            var extractedCount = 0.0;
             if (_totalAnswerCount == 0)
             {
                 _log.LogInformation("The user {user} has 0 new answers.", _options.UserId);
@@ -88,7 +89,7 @@ namespace askfmArchiver
 
             try
             {
-                await ParsePage(html);
+                extractedCount = await ParsePage(html);
             }
             catch (Exception e)
             {
@@ -97,7 +98,7 @@ namespace askfmArchiver
                 if (_answers.Count == 0)
                     Environment.Exit(-1);
 
-                _log.LogInformation("Attempting to commit {answerCount} answers to the database.", _answers.Count);
+                _log.LogError("Attempting to commit {answerCount} answers to the database.", _answers.Count);
                 var dbWriteCount = WriteToDb();
                 var msg = "";
                 if (dbWriteCount == _answers.Count)
@@ -109,19 +110,32 @@ namespace askfmArchiver
                     msg = "Failed to commit to the database. Number of rows comnitted: {dbWriteCount}";
                 }
 
-                _log.LogInformation(msg, dbWriteCount);
+                _log.LogError(msg, dbWriteCount);
                 Environment.Exit(-1);
             }
 
             WriteToDb();
 
             Console.Write("\rProgress: {0}%   ", 100);
-            Console.WriteLine("Finished Parsing {0} answers.", _extractedCount);
+            Console.WriteLine("Finished Parsing {0} answers.", extractedCount);
         }
 
-        private async Task ParsePage(HtmlDocument html)
+        private void LoadSets()
+        {
+            var answers = _dbContext.Answers.Where(u => u.UserId == _options.UserId);
+            if (answers == null) return;
+            foreach (var answer in answers)
+            {
+                _answerId.Add(answer.AnswerId);
+                if (answer.VisualHash != null && answer.VisualHash != "")
+                    _visualHashs.TryAdd(answer.VisualHash, answer);
+            }
+        }
+
+        private async Task<double> ParsePage(HtmlDocument html)
         {
             var currentPageId = _options.PageIterator;
+            var extractedCount = 0.0;
             while (true)
             {
                 var nextPageTupleTask = GetNextPage(html);
@@ -144,7 +158,7 @@ namespace askfmArchiver
                     var task = ParseArticle(article, dataObject);
                     dataTask.Add(task);
 
-                    _extractedCount++;
+                    extractedCount++;
                 }
 
                 var data = await Task.WhenAll(dataTask); ;
@@ -155,8 +169,10 @@ namespace askfmArchiver
 
                 html = nextHtml;
                 currentPageId = nextPageId;
-                PrintProgress(_totalAnswerCount);
+                PrintProgress(extractedCount);
             }
+
+            return extractedCount;
         }
 
         private async Task<Answer> ParseArticle(HtmlNode question, Answer dataObject)
@@ -459,6 +475,9 @@ namespace askfmArchiver
 
             var parsedCount = _dbContext.Answers.Count(u => u.UserId == _options.UserId);
             answerCount = Math.Abs(parsedCount - answerCount);
+
+
+            Console.WriteLine(answerCount);
             return answerCount;
         }
 
@@ -482,17 +501,15 @@ namespace askfmArchiver
 
         private Answer IsVisualDuplicate(string hash)
         {
-            var result = _dbContext.Answers
-                .FirstOrDefault(a => a.VisualHash == hash);
+            if (_visualHashs.TryGetValue(hash, out var result))
+                return result;
 
-            return result;
+            return null;
         }
 
         private bool DoesAnswerExist(string ansId)
         {
-            var exists = _dbContext.Answers
-                .Any(a => a.AnswerId == ansId);
-            return exists;
+            return _answerId.Contains(ansId);
         }
 
         private int WriteToDb()
@@ -572,9 +589,9 @@ namespace askfmArchiver
         }
 
 
-        private void PrintProgress(double totalCount)
+        private void PrintProgress(double extractedCount)
         {
-            var percent = _totalAnswerCount / totalCount * 100;
+            var percent = (double)(extractedCount / _totalAnswerCount) * 100;
             if (percent >= 100)
                 percent = _lastPercentage;
 
@@ -602,8 +619,9 @@ namespace askfmArchiver
             return nodes;
         }
 
-        private void SanityCheck()
+        private void Init()
         {
+
             if (!DoesUserExist())
             {
                 if (!TryInsertUser())
@@ -626,6 +644,8 @@ namespace askfmArchiver
                 _log.LogError("Failed to create the directory {dir}", dir);
                 _log.LogError("{errorMsg}\n{stackTrace}", e.Message, e.StackTrace);
             }
+
+            LoadSets();
         }
 
     }
