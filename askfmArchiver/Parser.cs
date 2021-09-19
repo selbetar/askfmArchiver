@@ -9,146 +9,159 @@ using askfmArchiver.Enums;
 using askfmArchiver.Models;
 using askfmArchiver.Utils;
 using HtmlAgilityPack;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace askfmArchiver
 {
-    public class Parser
+    public class Parser : IParser
     {
         private const string BaseUrl = "https://ask.fm/";
-
-        private readonly string _userId;
-        private readonly string _baseUrl;
-        private readonly string _pageIterator;
-        private readonly DateTime _stopAt;
-        private readonly string _output;
-
-        private string _userName;
         private readonly List<Answer> _answers;
 
-        private readonly NetworkManager _requestClient;
+        private string _userName;
+
+        private readonly MyDbContext _dbContext;
+        private readonly ILogger<Parser> _log;
+        private readonly IOptions _options;
+        private readonly INetworkManager _networkManager;
+        private readonly IFileManager _fileManager;
+
 
         private bool _isDone;
         private bool _isLastPage;
+
         private int _ansCount;
+        private int _totalAnswerCount;
 
-        private readonly object _lock = new object();
-        private readonly object _logLock = new object();
-
-        public Parser(string userId, string output, string pageIterator = "",
-            DateTime endDate = default)
+        public Parser(MyDbContext dbContext, ILogger<Parser> logger, IOptions options, INetworkManager networkManager, IFileManager fileManager)
         {
-            _baseUrl = BaseUrl + userId;
-            _userId = userId.ToLower();
-            _pageIterator = pageIterator;
-            _stopAt = endDate;
-            _output = output;
-
             _answers = new List<Answer>();
-            _requestClient = new NetworkManager();
+
+
+            _dbContext = dbContext;
+            _log = logger;
+            _options = options;
+            _networkManager = networkManager;
+            _fileManager = fileManager;
+
+            _dbContext.Database.Migrate();
 
             _isDone = false;
             _isLastPage = false;
+
+            _totalAnswerCount = 0;
         }
 
         public async Task Parse()
         {
-            var url = _baseUrl;
-            if (_pageIterator != "")
-                url += "?older=" + _pageIterator;
+
+            var url = CreateUrl(BaseUrl, _options.UserId);
+            if (_options.PageIterator != "")
+                url = CreateUrl(url, "?older=" + _options.PageIterator);
+
+            HtmlDocument html = null;
+            try
+            {
+                html = await GetHtmlDoc(url);
+            }
+            catch (Exception e)
+            {
+                _log.LogCritical("Parse(): Terminating the application " +
+                                 "due to an error in retrieving the html doc. {errorMsg}\n{errorStack}",
+                    e.Message, e.StackTrace);
+                Environment.Exit(-1);
+            }
+
+            if (!DoesUserExist())
+            {
+                if (!TryInsertUser())
+                {
+                    _log.LogCritical("Parse(): Inserting User {user} into the database " +
+                                  "has failed. Aborting program execution.",
+                        _options.UserId);
+                    Environment.Exit(-1);
+                }
+            }
+
+            SetUserName(html);
+            _totalAnswerCount = ExtractAnswerCount(html);
+            if (_totalAnswerCount == 0)
+            {
+                _log.LogInformation("The user {user} has 0 new answers.", _options.UserId);
+                return;
+            }
 
             try
             {
-                if (!DoesUserExist())
-                    InsertUser();
+                await ParsePage(html);
             }
             catch (Exception e)
             {
-                Logger.WriteLine("Parse() Exception: ", e);
-                Environment.Exit(1);
-            }
-            try
-            {
-                var htmlTask = GetHtmlDoc(url);
-                var htmlDoc = await htmlTask;
-                await ParsePage(htmlDoc);
-                Console.Write("\rProgress: {0}%   ", 100);
-                Console.WriteLine("Finished Parsing {0} answers.", _ansCount);
-            }
-            catch (Exception e)
-            {
-                lock (_logLock)
-                {
-                    Logger.WriteLine("Parse() Exception: ", e);
-                    Logger.WriteLine("Attempting to commit " + _answers.Count + " parsed answers...");
-                }
+                _log.LogCritical("{criticalMsg}\n{criticalStackTrance}", e.Message, e.StackTrace);
 
                 if (_answers.Count == 0)
-                    Environment.Exit(1);
+                    Environment.Exit(-1);
 
-                var dbTask = WriteToDb();
-                await dbTask;
+                _log.LogInformation("Attempting to commit {answerCount} answers to the database.", _answers.Count);
+                var dbWriteCount = WriteToDb();
+                var msg = "";
+                if (dbWriteCount == _answers.Count)
+                {
+                    msg = "Successfully committed {dbWriteCount} answers to the database.";
+                }
+                else
+                {
+                    msg = "Failed to commit to the database. Number of rows comnitted: {dbWriteCount}";
+                }
 
-                Environment.Exit(1);
+                _log.LogInformation(msg, dbWriteCount);
+                Environment.Exit(-1);
             }
 
-            await WriteToDb();
+            WriteToDb();
+
+            Console.Write("\rProgress: {0}%   ", 100);
+            Console.WriteLine("Finished Parsing {0} answers.", _ansCount);
         }
 
         private async Task ParsePage(HtmlDocument html)
         {
-            var currentPageId = _pageIterator;
-            var totalAnswerCount = GetAnswerCount(html);
-            SetUserName(html);
-
+            var currentPageId = _options.PageIterator;
             while (true)
             {
-                var pageOb = new Answer();
-                var nextHtmlTask = GetNextPage(html, pageOb);
+                var nextPageTupleTask = GetNextPage(html);
 
-                // Get the node that contains all of the questions on this page
-                var articleNodes = html.DocumentNode.SelectNodes("//div[@class='item-page']")
-                    .First()
-                    .SelectNodes("//article");
+                var articleNodes = GetQuestionNodes(html);
+                if (articleNodes == null)
+                {
+                    _log.LogError("ParsePage(): articleNodes are null. html is:\n{html}", html);
+                    break;
+                }
 
                 var dataTask = new List<Task<Answer>>();
-                try
+                foreach (var article in articleNodes)
                 {
-                    foreach (var article in articleNodes)
-                    {
-                        if (IsAPhotoPoll(article)) continue;
-                        var dataObject = new Answer { UserId = _userId, PageId = currentPageId };
-                        ParseUniqueInfo(article, dataObject);
-                        if (_isDone) break;
-                        var task = ParseArticle(article, dataObject);
-                        dataTask.Add(task);
-                        _ansCount++;
-                    }
-                }
-                catch (Exception e)
-                {
-                    lock (_logLock)
-                    {
-                        Logger.WriteLine("ParsePage() Exception: ", e);
-                    }
+                    if (IsAPhotoPoll(article)) continue;
 
-                    if (dataTask.Count != 0)
-                    {
-                        var dataErr = await Task.WhenAll(dataTask);
-                        _answers.AddRange(dataErr);
-                    }
+                    var dataObject = new Answer { UserId = _options.UserId, PageId = currentPageId };
+                    if (!ParseUniqueInfo(article, dataObject) || _isDone) break;
 
-                    throw;
+                    var task = ParseArticle(article, dataObject);
+                    dataTask.Add(task);
+
+                    _ansCount++;
                 }
 
-                var data = await Task.WhenAll(dataTask);
+                var data = await Task.WhenAll(dataTask); ;
                 _answers.AddRange(data);
 
-                html = await nextHtmlTask;
-                if (_isLastPage || _isDone)
-                    break;
+                var (nextHtml, nextPageId) = await nextPageTupleTask;
+                if (_isLastPage || _isDone) break;
 
-                currentPageId = pageOb.PageId;
-                PrintProgress(totalAnswerCount);
+                html = nextHtml;
+                currentPageId = nextPageId;
+                PrintProgress(_totalAnswerCount);
             }
         }
 
@@ -168,26 +181,34 @@ namespace askfmArchiver
             return dataObject;
         }
 
-        private void ParseUniqueInfo(HtmlNode question, Answer dataObject)
+        private bool ParseUniqueInfo(HtmlNode question, Answer dataObject)
         {
-            var nodes = question.SelectNodes(question.XPath + "//a[@class='streamItem_meta']");
-            var node = nodes.First(nd => nd.Attributes.Contains("href")
-                                         && nd.Attributes.Contains("title")
-                                         && nd.Attributes.Contains("class")
-                                         && nd.GetAttributeValue("href", "") != "");
-
-            var date = node.FirstChild.Attributes.First().Value;
-            var id = node.GetAttributeValue("href", "").Split("/").Last().Trim();
-            dataObject.AnswerId = id;
-            dataObject.Date = DateTime.ParseExact(date, "yyyy-MM-ddTHH:mm:ss",
-                CultureInfo.InvariantCulture);
-            var dateCompare = DateTime.Compare(dataObject.Date, _stopAt);
-
-            if (_isDone) return;
-            lock (_lock)
+            int dateCompare;
+            string id;
+            try
             {
-                _isDone = dateCompare <= 0 || DoesAnswerExist(id);
+                var nodes = question.SelectNodes(question.XPath + "//a[@class='streamItem_meta']");
+                var node = nodes.First(nd => nd.Attributes.Contains("href")
+                                             && nd.Attributes.Contains("title")
+                                             && nd.Attributes.Contains("class")
+                                             && nd.GetAttributeValue("href", "") != "");
+
+                var date = node.FirstChild.Attributes.First().Value;
+                id = node.GetAttributeValue("href", "").Split("/").Last().Trim();
+                dataObject.AnswerId = id;
+                dataObject.Date = DateTime.ParseExact(date, "yyyy-MM-ddTHH:mm:ss",
+                    CultureInfo.InvariantCulture);
+                dateCompare = DateTime.Compare(dataObject.Date, _options.StopAt);
             }
+            catch (Exception e)
+            {
+                _log.LogError("Error during executing ParseUniqueInfo(): {errMsg}\n{stackTrace} ", e.Message, e.StackTrace);
+                return false;
+            }
+
+            _isDone = dateCompare <= 0 || DoesAnswerExist(id);
+
+            return true;
         }
 
         private async Task ParseThreadInfo(HtmlNode thread, Answer dataObject)
@@ -254,65 +275,42 @@ namespace askfmArchiver
 
         private async Task ParseVisuals(HtmlNode article, Answer dataObject)
         {
-            string srcUrl;
             var node = article.SelectSingleNode(article.XPath + "//div[@class='streamItem_visual']");
             if (node == null) return;
+            dataObject.VisualId = dataObject.AnswerId;
+
             var videoNode = node.SelectSingleNode(node.XPath + "//div[@class='rsp-eql-desktop']");
 
-            // visual is a video
-            if (videoNode != null)
-            {
-                var srcNode = videoNode.FirstChild;
-                srcUrl = srcNode.GetAttributeValue("src", "");
-                dataObject.VisualType = FileType.VIDEO;
-            }
-            else
-            {
-                node = node.SelectSingleNode(node.XPath + "//a");
-                if (node == null)
-                {
-                    lock (_logLock)
-                    {
-                        Logger.WriteLine("ParseVisuals() Error: Couldn't parse visual with answerId: "
-                                         + dataObject.AnswerId);
-                    }
-                    return;
-                }
-                var visualType = node.GetAttributeValue("data-action", "");
-                switch (visualType)
-                {
-                    case "GifToggle":
-                        dataObject.VisualType = FileType.GIF;
-                        var attrName = "data-src";
-                        srcUrl = node.FirstChild.GetAttributeValue(attrName, "");
-                        break;
+            var srcUrl = videoNode != null ?
+                ExtractVideo(videoNode, dataObject)
+                : ExtractPhoto(node, dataObject);
 
-                    case "ImageOpen":
-                        dataObject.VisualType = FileType.IMG;
-                        var picNode = node.SelectSingleNode(node.XPath + "//picture/source");
-                        srcUrl = picNode.GetAttributeValue("srcset", "err: img src attribute not found");
-                        break;
-
-                    default:
-                        return;
-                }
+            if (srcUrl == "")
+            {
+                _log.LogWarning("Failed to extract visuals for {userId}:{answerId}.", dataObject.UserId, dataObject.AnswerId);
+                return;
             }
 
             var extension = srcUrl.Split(".").Last().Trim();
-            dataObject.VisualId = dataObject.AnswerId;
             dataObject.VisualUrl = srcUrl;
             dataObject.VisualExt = extension;
 
-            var client = new NetworkManager();
-            var fm = new FileManager();
-
             var fileName = dataObject.AnswerId + "." + extension.Trim();
-            var file = Path.Combine(_output, "visuals_" + _userId, fileName);
+            var file = Path.Combine(_options.Output, "visuals_" + _options.UserId, fileName);
 
-            file = await client.DownloadMedia(srcUrl, file);
-            if (file == "") return;
+            try
+            {
+                await _networkManager.DownloadMedia(srcUrl, file);
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning("ParseVisuals(): Failed to download media for {userId}:{visualId} with url {url}." +
+                              "{errMsg}\n{stackTrace}",
+                    dataObject.UserId, dataObject.VisualId, srcUrl, e.Message, e.StackTrace);
+                return;
+            }
 
-            var hash = fm.ComputeHash(file);
+            var hash = _fileManager.ComputeHash(file);
             dataObject.VisualHash = hash;
             if (hash == "") return;
 
@@ -323,6 +321,63 @@ namespace askfmArchiver
             dataObject.VisualId = duplicate.VisualId;
             dataObject.VisualExt = duplicate.VisualExt;
             dataObject.VisualHash = duplicate.VisualHash;
+        }
+
+        private string ExtractVideo(HtmlNode videoNode, Answer dataObject)
+        {
+            var srcNode = videoNode.FirstChild;
+            var srcUrl = srcNode.GetAttributeValue("src", "");
+            dataObject.VisualType = FileType.VIDEO;
+
+            if (srcUrl == "")
+            {
+                _log.LogWarning("ExtractVideo(): Failed to extract video for {userId}:{answerId}",
+                    dataObject.UserId, dataObject.AnswerId);
+            }
+            return srcUrl;
+        }
+
+        private string ExtractPhoto(HtmlNode visualNode, Answer dataObject)
+        {
+            var srcUrl = "";
+            var node = visualNode.SelectSingleNode(visualNode.XPath + "//a");
+            if (node == null)
+            {
+                _log.LogWarning("ExtractPhoto(): Failed to extract visual for {userId}:{answerId}",
+                    dataObject.UserId, dataObject.AnswerId);
+                return "";
+            }
+
+            var visualType = node.GetAttributeValue("data-action", "");
+            switch (visualType)
+            {
+                case "GifToggle":
+                    dataObject.VisualType = FileType.GIF;
+                    var gifNode = node.FirstChild;
+                    if (gifNode != null)
+                        srcUrl = gifNode.GetAttributeValue("data-src", "");
+                    break;
+
+                case "ImageOpen":
+                    dataObject.VisualType = FileType.IMG;
+                    var picNode = node.SelectSingleNode(node.XPath + "//picture/source");
+                    if (picNode != null)
+                        srcUrl = picNode.GetAttributeValue("srcset", "");
+                    break;
+
+                default:
+                    _log.LogWarning("ExtractPhoto(): Failed to extract visual " +
+                                  "and visual type for {userId}:{answerId}",
+                        dataObject.UserId, dataObject.AnswerId);
+                    break;
+            }
+
+            if (srcUrl == "")
+            {
+                _log.LogWarning("ExtractPhoto(): Failed to extract srcUrl {userId}:{answerId}.",
+                    dataObject.UserId, dataObject.AnswerId);
+            }
+            return srcUrl;
         }
 
         private async Task ParseLikes(HtmlNode article, Answer dataObject)
@@ -340,7 +395,7 @@ namespace askfmArchiver
             dataObject.Likes = count;
         }
 
-        private async Task<HtmlDocument> GetNextPage(HtmlDocument html, Answer dataObject)
+        private async Task<Tuple<HtmlDocument, string>> GetNextPage(HtmlDocument html)
         {
             var nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next']");
             if (nextPageNode == null)
@@ -348,51 +403,48 @@ namespace askfmArchiver
                 _isLastPage = true;
                 return null;
             }
-            var nextPageUri = nextPageNode.First().GetAttributeValue("href", "");
-            dataObject.PageId = nextPageUri.Split("=").Last();
-            var nextHtml = await GetHtmlDoc(BaseUrl + nextPageUri);
 
-            return nextHtml;
+            var nextPageUri = nextPageNode.First().GetAttributeValue("href", "");
+            var nextPageId = nextPageUri.Split("=").Last();
+            var url = CreateUrl(BaseUrl, nextPageUri);
+            var nextHtml = await GetHtmlDoc(url);
+
+            return new Tuple<HtmlDocument, string>(nextHtml, nextPageId);
         }
 
         private async Task<HtmlDocument> GetHtmlDoc(string url)
         {
-            var htmlDoc = new HtmlDocument();
-            var html = "";
-            try
-            {
-                html = await _requestClient.HttpRequest(url);
-            }
-            catch (Exception e)
-            {
-                lock (_logLock)
-                {
-                    Logger.WriteLine("GetHtmlDoc() Exception: ", e);
-                    Logger.WriteLine("Terminating Application..");
-                    Environment.Exit(1);
-                }
-            }
+            var html = new HtmlDocument();
+            var htmlStr = await _networkManager.HttpRequest(url);
+            html.LoadHtml(htmlStr);
 
-            htmlDoc.LoadHtml(html);
-            return htmlDoc;
+            return html;
         }
 
-        private int GetAnswerCount(HtmlDocument html)
+        private int ExtractAnswerCount(HtmlDocument html)
         {
-            using var db = new MyDbContext();
             var node = html.
                 DocumentNode.
                 SelectSingleNode("//div[@class='profileStats_number profileTabAnswerCount']");
+
+            if (node == null)
+            {
+                _log.LogWarning("ExtractAnswerCount(): Couldn't extract the answer count. " +
+                                "Progress Info can't be reported.");
+                return -1;
+            }
+
             var text = node.GetAttributeValue("title", "");
             var count = Regex.Replace(text, "[^0-9]", "");
 
             var answerCount = int.Parse(count);
+            if (!DoesUserExist() || answerCount == 0) return answerCount;
 
-            if (!DoesUserExist()) return answerCount;
-            var parsedCount = db.Answers.Count(u => u.UserId == _userId);
+            var parsedCount = _dbContext.Answers.Count(u => u.UserId == _options.UserId);
             answerCount = Math.Abs(parsedCount - answerCount);
             return answerCount;
         }
+
         private void SetUserName(HtmlDocument html)
         {
             _userName = html.DocumentNode.SelectSingleNode("//h1[@class='userName_status']")
@@ -413,52 +465,37 @@ namespace askfmArchiver
 
         private Answer IsVisualDuplicate(string hash)
         {
-            using var db = new MyDbContext();
-
-            var result = db.Answers
-                .Where(a => a.VisualHash == hash)
-                .OrderBy(a => a.Date)
-                .FirstOrDefault();
+            var result = _dbContext.Answers
+                .FirstOrDefault(a => a.VisualHash == hash);
 
             return result;
         }
 
         private bool DoesAnswerExist(string ansId)
         {
-            using var db = new MyDbContext();
-            var exists = db.Answers
+            var exists = _dbContext.Answers
                 .Any(a => a.AnswerId == ansId);
             return exists;
         }
 
-        private async Task WriteToDb()
+        private int WriteToDb()
         {
-            if (_answers.Count == 0)
-                return;
+            if (_answers.Count == 0) return 0;
 
-            await using var db = new MyDbContext();
-            foreach (var c in _answers)
+            var count = -1;
+            _dbContext.AddRange(_answers);
+            try
             {
-                try
-                {
-                    db.Add(c);
-                }
-                catch (Exception e)
-                {
-                    lock (_logLock)
-                    {
-                        Logger.WriteLine("WriteToDb Exception: ", e);
-                        Logger.WriteLine("Writing data to disk..");
-                    }
-                    await WriteToDisk();
-                    Environment.Exit(1);
-                }
+                count = _dbContext.SaveChanges();
+                UpdateUser();
+            }
+            catch (Exception e)
+            {
+                _log.LogCritical("{dbErrorMsg}\n{dbErrorStackTrace}",
+                    e.Message, e.StackTrace);
             }
 
-            var dbTask = db.SaveChangesAsync();
-            UpdateUser();
-
-            await dbTask;
+            return count;
         }
 
         private async Task WriteToDisk()
@@ -468,11 +505,11 @@ namespace askfmArchiver
 
             if (_answers.Count != 0)
             {
-                var filename = _userId + "_" + _answers.Last().
+                var filename = _options.UserId + "_" + _answers.Last().
                     Date.ToString("yy-MM-dd_HH-mm")
                     .Replace("-", "");
 
-                var file = Path.Combine(_output, filename);
+                var file = Path.Combine(_options.Output, filename);
                 dataTask = fm.SaveData(_answers, file, FileType.JSON);
             }
 
@@ -482,41 +519,68 @@ namespace askfmArchiver
 
         private void UpdateUser()
         {
-            using var db = new MyDbContext();
-            var user = db.Users.First(u => u.UserId == _userId);
+            var user = _dbContext.Users.First(u => u.UserId == _options.UserId);
             user.UserName = _userName;
             user.LastQuestion = _answers.First().Date;
             user.FirstQuestion = user.FirstQuestion == default ? _answers.Last().Date : user.FirstQuestion;
-            db.SaveChanges();
+            _dbContext.SaveChanges();
         }
 
-        private void InsertUser()
+        private bool TryInsertUser()
         {
-            using var db = new MyDbContext();
-            db.Add(new User
+            _dbContext.Add(new User
             {
-                UserId = _userId,
+                UserId = _options.UserId,
                 FirstQuestion = default,
                 LastQuestion = default,
                 UserName = _userName
             });
 
-            db.SaveChanges();
+            try
+            {
+                _dbContext.SaveChanges();
+            }
+            catch (Exception e)
+            {
+                _log.LogError("TryInsertUser():\n {errMsg}\n{stackTrace}", e.Message, e.StackTrace);
+                return false;
+            }
+
+            return true;
         }
 
         private bool DoesUserExist()
         {
-            using var db = new MyDbContext();
-
-            return db.Users.FirstOrDefault(u => u.UserId == _userId) != null;
+            return _dbContext.Users.FirstOrDefault(u => u.UserId == _options.UserId) != null;
         }
+
 
         private void PrintProgress(double totalCount)
         {
-            var percent = _ansCount / totalCount * 100;
+            var percent = _totalAnswerCount / totalCount * 100;
             if (percent >= 100)
                 percent = 95.00;
             Console.Write("\rProgress: {0}%   ", Math.Round(percent, 2));
+        }
+
+        private string CreateUrl(string baseUrl, params string[] paths)
+        {
+            var uri = new Uri(baseUrl);
+            foreach (var str in paths)
+            {
+                uri = new Uri(uri, str);
+            }
+
+            return uri.ToString();
+        }
+
+        private HtmlNodeCollection GetQuestionNodes(HtmlDocument html)
+        {
+            var nodes = html.DocumentNode.SelectNodes("//div[@class='item-page']");
+            if (nodes == null) return null;
+
+            nodes = nodes.First().SelectNodes("//article");
+            return nodes;
         }
 
     }
