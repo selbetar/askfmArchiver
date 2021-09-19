@@ -31,8 +31,9 @@ namespace askfmArchiver
         private bool _isDone;
         private bool _isLastPage;
 
-        private int _ansCount;
-        private int _totalAnswerCount;
+        private int _extractedCount; // Tracks the number of answers that have been extracted. Used for progress reporting.
+        private int _totalAnswerCount; // The count of the user's total number of answers. Used for progress reporting.
+        private double _lastPercentage; // The last reported percentage. Used for progress reporting.
 
         public Parser(MyDbContext dbContext, ILogger<Parser> logger, IOptions options, INetworkManager networkManager, IFileManager fileManager)
         {
@@ -53,8 +54,10 @@ namespace askfmArchiver
             _totalAnswerCount = 0;
         }
 
+
         public async Task Parse()
         {
+            SanityCheck();
 
             var url = CreateUrl(BaseUrl, _options.UserId);
             if (_options.PageIterator != "")
@@ -73,16 +76,7 @@ namespace askfmArchiver
                 Environment.Exit(-1);
             }
 
-            if (!DoesUserExist())
-            {
-                if (!TryInsertUser())
-                {
-                    _log.LogCritical("Parse(): Inserting User {user} into the database " +
-                                  "has failed. Aborting program execution.",
-                        _options.UserId);
-                    Environment.Exit(-1);
-                }
-            }
+
 
             SetUserName(html);
             _totalAnswerCount = ExtractAnswerCount(html);
@@ -122,7 +116,7 @@ namespace askfmArchiver
             WriteToDb();
 
             Console.Write("\rProgress: {0}%   ", 100);
-            Console.WriteLine("Finished Parsing {0} answers.", _ansCount);
+            Console.WriteLine("Finished Parsing {0} answers.", _extractedCount);
         }
 
         private async Task ParsePage(HtmlDocument html)
@@ -150,7 +144,7 @@ namespace askfmArchiver
                     var task = ParseArticle(article, dataObject);
                     dataTask.Add(task);
 
-                    _ansCount++;
+                    _extractedCount++;
                 }
 
                 var data = await Task.WhenAll(dataTask); ;
@@ -315,7 +309,7 @@ namespace askfmArchiver
             }
             catch (Exception e)
             {
-                _log.LogWarning("ParseVisuals(): Failed to download media for {userId}:{visualId} with url {url}." +
+                _log.LogWarning("ParseVisuals(): Failed to download media for {userId}:{visualId} with url {url} \n" +
                               "{errMsg}\n{stackTrace}",
                     dataObject.UserId, dataObject.VisualId, srcUrl, e.Message, e.StackTrace);
                 return;
@@ -424,7 +418,7 @@ namespace askfmArchiver
             if (nextPageNode == null)
             {
                 _isLastPage = true;
-                return null;
+                return new Tuple<HtmlDocument, string>(null, ""); ;
             }
 
             var nextPageUri = nextPageNode.First().GetAttributeValue("href", "");
@@ -582,7 +576,9 @@ namespace askfmArchiver
         {
             var percent = _totalAnswerCount / totalCount * 100;
             if (percent >= 100)
-                percent = 95.00;
+                percent = _lastPercentage;
+
+            _lastPercentage = percent;
             Console.Write("\rProgress: {0}%   ", Math.Round(percent, 2));
         }
 
@@ -604,6 +600,32 @@ namespace askfmArchiver
 
             nodes = nodes.First().SelectNodes("//article");
             return nodes;
+        }
+
+        private void SanityCheck()
+        {
+            if (!DoesUserExist())
+            {
+                if (!TryInsertUser())
+                {
+                    _log.LogError("Inserting User {user} into the database " +
+                                  "has failed. Aborting program execution.",
+                        _options.UserId);
+                    Environment.Exit(-1);
+                }
+            }
+
+            var dir = Path.Combine(_options.Output, "visuals_" + _options.UserId); ;
+
+            try
+            {
+                _fileManager.CheckDir(dir);
+            }
+            catch (Exception e)
+            {
+                _log.LogError("Failed to create the directory {dir}", dir);
+                _log.LogError("{errorMsg}\n{stackTrace}", e.Message, e.StackTrace);
+            }
         }
 
     }
