@@ -11,7 +11,7 @@ using askfmArchiver.Enums;
 
 namespace askfmArchiver.Utils
 {
-    public class FileManager
+    public class FileManager : IFileManager
     {
         private static string _outDir;
         public FileManager()
