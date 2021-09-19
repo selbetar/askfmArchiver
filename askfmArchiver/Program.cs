@@ -14,66 +14,66 @@ namespace askfmArchiver
     {
         private static async Task Main(string[] args)
         {
-	        var dbTask = CreateTables();
-	        
-            string userId = "", pageIterator = "", input = ""  , output = "";
+            var dbTask = CreateTables();
+
+            string userId = "", pageIterator = "", input = "", output = "";
             var stopAt = DateTime.Now;
             var type = JobType.NONE;
-		    
+
             CommandLine.Parser.Default.ParseArguments<Options>(args)
                 .WithParsed(opts =>
                 {
-                    userId     = opts.UserId.ToLower();
+                    userId = opts.UserId.ToLower();
                     pageIterator = opts.PageIterator;
-                    stopAt      = opts.StopAt;
-                    input    = opts.Input;
+                    stopAt = opts.StopAt;
+                    input = opts.Input;
                     output = opts.Output;
 
                     var tmp = opts.Type.ToLower();
                     switch (tmp)
                     {
-	                    case "p":
-	                    case "parse":
-		                    type = JobType.PARSE;
-		                    break;
-	                    case "m":
-	                    case "md":
-	                    case "markdown":
-		                    type = JobType.MARKDOWN;
-		                    break;
+                        case "p":
+                        case "parse":
+                            type = JobType.PARSE;
+                            break;
+                        case "m":
+                        case "md":
+                        case "markdown":
+                            type = JobType.MARKDOWN;
+                            break;
                     }
                 })
                 .WithNotParsed(HandleParseError);
             CommandLine.Parser.Default.ParseArguments<Options>(args);
-            
+
             var fm = new FileManager();
             fm.CheckDir(output);
-            
-            var logFileName = "Log_" + userId + "_"+ DateTime.Now.ToString("yy-MM-dd_HH-mm").
+
+            var logFileName = "Log_" + userId + "_" + DateTime.Now.ToString("yy-MM-dd_HH-mm").
                 Replace("-", "") + ".txt";
             var logFile = Path.Combine(output, logFileName);
             Logger.SetLogFile(logFile);
-			
+
             await dbTask;
             switch (type)
             {
-	            case JobType.PARSE:
-		            var askfmParser = new Parser(userId, output, pageIterator, stopAt);
-		            await askfmParser.Parse();
-		            break;
-	            case JobType.MARKDOWN:
-		            var markDown = new MarkDown(userId, output);
-		            await markDown.Generate();
-		            break;
-	            case JobType.NONE:
-		            Logger.WriteLine("Error in specified type. Run --help for supported job types.");
-		            Environment.Exit(1);
-		            break;
-	            default:
-		            throw new ArgumentOutOfRangeException();
+                case JobType.PARSE:
+                    var askfmParser = new Parser(userId, output, pageIterator, stopAt);
+                    await askfmParser.Parse();
+                    break;
+                case JobType.MARKDOWN:
+                    var markDown = new MarkDown(userId, output);
+                    await markDown.Generate();
+                    break;
+                case JobType.NONE:
+                    Logger.WriteLine("Error in specified type. Run --help for supported job types.");
+                    Environment.Exit(1);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException();
             }
         }
-        
+
         private static void HandleParseError(IEnumerable<Error> errs)
         {
             var enumerable = errs as Error[] ?? errs.ToArray();
@@ -86,7 +86,7 @@ namespace askfmArchiver
             }
             Environment.Exit(1);
         }
-        
+
         private static async Task CreateTables()
         {
             var con = new SqliteConnectionStringBuilder()
@@ -131,7 +131,7 @@ namespace askfmArchiver
 				FOREIGN KEY (UserID)
         		REFERENCES Users (UserID))",
             };
-		    
+
             connection.Open();
             var command = connection.CreateCommand();
             var tasks = new List<Task<int>>();

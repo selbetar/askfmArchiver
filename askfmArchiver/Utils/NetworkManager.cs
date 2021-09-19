@@ -31,7 +31,7 @@ namespace askfmArchiver.Utils
 
             return response;
         }
-        
+
         // returns file name on success
         // empty string otherwise
         public async Task<string> DownloadMedia(string url, string file)
@@ -56,7 +56,7 @@ namespace askfmArchiver.Utils
 
             file = Path.GetFileName(file);
             file = Path.Join(dir, file);
-            
+
             var client = new HttpClient
             {
                 Timeout = new TimeSpan(0, 0, 0, 20)
@@ -75,6 +75,6 @@ namespace askfmArchiver.Utils
 
             return file;
         }
-        
+
     }
 }

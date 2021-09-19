@@ -12,12 +12,12 @@ namespace askfmArchiver
 {
     public class MarkDown
     {
-        private  readonly string _userId;
+        private readonly string _userId;
         private readonly string _outDir;
-    
+
         // tid, thread count
         private readonly Dictionary<string, int> _threadMap;
-        
+
         public MarkDown(string userId, string outDir = @"./output")
         {
             _userId = userId.ToLower();
@@ -54,24 +54,24 @@ namespace askfmArchiver
 
             var info = GenerateHeader();
             UpdatePdfTable(answers.Last().AnswerId, answers.Last().Date);
-            await SaveFile(new List<string> {info}, "info_" + _userId);
+            await SaveFile(new List<string> { info }, "info_" + _userId);
             Console.WriteLine("Markdown generation has finished: Generated {0} files", fileCount + 1);
         }
 
         private async Task SaveFile(List<string> lines, string filename)
         {
             var fm = new FileManager();
-            var  file = Path.Combine(_outDir, filename);
-           await fm.SaveData(lines, file, FileType.MARKDOWN);
+            var file = Path.Combine(_outDir, filename);
+            await fm.SaveData(lines, file, FileType.MARKDOWN);
 
         }
-        
+
         private string ProcessData(Answer ans)
         {
-            var answer   = ProcessMainText(ans.AnswerText, true);
+            var answer = ProcessMainText(ans.AnswerText, true);
             var question = ProcessMainText(ans.QuestionText, false);
-            var info     = ProcessAnswerInfo(ans);
-            var visuals  = "\n";
+            var info = ProcessAnswerInfo(ans);
+            var visuals = "\n";
             if (!string.IsNullOrEmpty(ans.VisualId))
                 visuals += ProcessVisuals(ans, ans.VisualType);
             var content = question + answer + "\n" + visuals + info + "***" + "\n";
@@ -83,7 +83,7 @@ namespace askfmArchiver
         {
             if (string.IsNullOrEmpty(text)) return "";
             var processedText = text;
-            var isArabic      = Regex.IsMatch(text, @"\p{IsArabic}");
+            var isArabic = Regex.IsMatch(text, @"\p{IsArabic}");
 
             if (ContainsLink(processedText))
             {
@@ -121,7 +121,7 @@ namespace askfmArchiver
         private string ProcessAnswerText(string text)
         {
             var isArabic = Regex.IsMatch(text, @"\p{IsArabic}");
-            var temp     = text;
+            var temp = text;
             text = "<div class=\"answer\">" + text + "</div>";
 
             if (isArabic)
@@ -136,7 +136,7 @@ namespace askfmArchiver
         private string FormatLinks(string text)
         {
             const string pattern = @"<link>(.*?)<\\link>";
-            var          matches = Regex.Matches(text, pattern, RegexOptions.IgnoreCase);
+            var matches = Regex.Matches(text, pattern, RegexOptions.IgnoreCase);
             foreach (var match in matches)
             {
                 var str = match.ToString().Replace("<link>", "")
@@ -153,16 +153,16 @@ namespace askfmArchiver
 
             return text;
         }
-        
+
         private string ProcessVisuals(Answer ans, FileType type)
         {
             string visuals;
             var visualFile = ans.VisualId + "." + ans.VisualExt;
-            var path = Path.Combine(_outDir,"visuals_" + ans.UserId, visualFile);
-            
+            var path = Path.Combine(_outDir, "visuals_" + ans.UserId, visualFile);
+
             if (type != FileType.IMG)
             {
-                var answerLink = "https://ask.fm/" + ans.UserId + "/answers/" +  ans.AnswerId;
+                var answerLink = "https://ask.fm/" + ans.UserId + "/answers/" + ans.AnswerId;
                 var url = string.IsNullOrEmpty(ans.VisualUrl) ? answerLink : ans.VisualUrl;
                 visuals = "<a target=\"_blank\" href=\"" + url + "\">Visual: " + type + "</a>";
             }
@@ -173,12 +173,12 @@ namespace askfmArchiver
 
             return visuals + "\n\n";
         }
-        
+
         private string ProcessAnswerInfo(Answer answer)
         {
             var processedText = "";
-            const string spacing       = "&emsp;&emsp;";
-            var link = "https://ask.fm/" + answer.UserId + "/answers/" +  answer.AnswerId; 
+            const string spacing = "&emsp;&emsp;";
+            var link = "https://ask.fm/" + answer.UserId + "/answers/" + answer.AnswerId;
             processedText += "<a target=\"_blank\" href=\"" + link + "\">" +
                              answer.Date.ToString("yyyy-MM-dd HH:mm") + "</a>" + spacing;
             processedText += "Likes: " + answer.Likes + spacing;
@@ -207,12 +207,12 @@ namespace askfmArchiver
             headerText += "---";
             return headerText;
         }
-        
+
         private bool ContainsLink(string text)
         {
             return text.Contains("<link>");
         }
-        
+
         private List<Answer> GetRecord()
         {
             using var db = new MyDbContext();
@@ -226,7 +226,7 @@ namespace askfmArchiver
 
             if (answers.Count == 0)
                 return new List<Answer>();
-            
+
             foreach (var answer in answers.Where(answer => !_threadMap.TryAdd(answer.ThreadId, 0)))
             {
                 _threadMap[answer.ThreadId] = _threadMap[answer.ThreadId] + 1;
@@ -250,7 +250,7 @@ namespace askfmArchiver
                 {
                     UserId = _userId,
                     StopAt = stopAt,
-                    AnswerId = answerId 
+                    AnswerId = answerId
                 };
                 db.Add(pdfGen);
             }

@@ -18,7 +18,7 @@ namespace askfmArchiver.Utils
         {
             _outDir = "";
         }
-        
+
         public string ComputeHash(string file)
         {
             HashAlgorithm sha1Hash = SHA1.Create();
@@ -35,16 +35,16 @@ namespace askfmArchiver.Utils
                 Logger.WriteLine("ComputeHash Exception: ", e);
                 return "";
             }
-            
+
             var sBuilder = new StringBuilder();
             foreach (var by in hashValue)
             {
                 sBuilder.Append(by.ToString("x2"));
             }
-            
+
             return sBuilder.ToString();
         }
-        
+
         public async Task SaveData<T>(T data, string file, FileType type)
         {
             var dir = Path.GetDirectoryName(file);
@@ -74,14 +74,14 @@ namespace askfmArchiver.Utils
             var options = new JsonSerializerOptions
             {
                 WriteIndented = true,
-                Encoder       = JavaScriptEncoder.Create(UnicodeRanges.All)
+                Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
             };
             var json = JsonSerializer.Serialize(data, options);
             await File.WriteAllTextAsync(file, json, Encoding.UTF8);
         }
         private async Task SaveMarkDown<T>(T data, string file)
         {
-            var lines = (List<string>) (object) data;
+            var lines = (List<string>)(object)data;
             await File.WriteAllLinesAsync(file, lines, Encoding.UTF8);
         }
         public bool CheckDir(string dir)
