@@ -1,24 +1,24 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace askfmArchiver.Models
 {
+    // TODO https://docs.microsoft.com/en-us/ef/core/managing-schemas/migrations/?tabs=dotnet-core-cli
     public class MyDbContext : DbContext
     {
         public DbSet<User> Users { get; set; }
         public DbSet<Answer> Answers { get; set; }
         public DbSet<PdfGen> PdfGen { get; set; }
 
+        private readonly IConfiguration _config;
+
+        public MyDbContext(DbContextOptions<MyDbContext> options, IConfiguration config) : base(options)
+        {
+            _config = config;
+        }
         protected override void OnConfiguring(DbContextOptionsBuilder options)
         {
-            var con = new SqliteConnectionStringBuilder()
-            {
-                DataSource = @"data.db",
-                RecursiveTriggers = true,
-                ForeignKeys = true
-            }.ToString();
-
-            options.UseSqlite(con);
+            options.UseSqlite(_config.GetConnectionString("DefaultConnection"));
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -114,6 +114,5 @@ namespace askfmArchiver.Models
                     .HasColumnName("AnswerID");
             });
         }
-
     }
 }
