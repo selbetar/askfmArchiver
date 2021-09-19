@@ -10,18 +10,22 @@ using askfmArchiver.Utils;
 
 namespace askfmArchiver
 {
-    public class MarkDown
+    public class MarkDown : IMarkDown
     {
-        private  readonly string _userId;
+        private readonly string _userId;
         private readonly string _outDir;
-    
-        // tid, thread count
-        private readonly Dictionary<string, int> _threadMap;
-        
-        public MarkDown(string userId, string outDir = @"./output")
+        private readonly Dictionary<string, int> _threadMap; // tid, thread count
+
+        private readonly IFileManager _fm;
+        private readonly MyDbContext _dbContext;
+
+        public MarkDown(MyDbContext dbContext, IFileManager fm, IOptions options)
         {
-            _userId = userId.ToLower();
-            _outDir = outDir;
+            _dbContext = dbContext;
+            _fm = fm;
+
+            _userId = options.UserId.ToLower();
+            _outDir = options.Output;
             _threadMap = new Dictionary<string, int>();
         }
         public async Task Generate()
@@ -54,24 +58,22 @@ namespace askfmArchiver
 
             var info = GenerateHeader();
             UpdatePdfTable(answers.Last().AnswerId, answers.Last().Date);
-            await SaveFile(new List<string> {info}, "info_" + _userId);
+            await SaveFile(new List<string> { info }, "info_" + _userId);
             Console.WriteLine("Markdown generation has finished: Generated {0} files", fileCount + 1);
         }
 
         private async Task SaveFile(List<string> lines, string filename)
         {
-            var fm = new FileManager();
-            var  file = Path.Combine(_outDir, filename);
-           await fm.SaveData(lines, file, FileType.MARKDOWN);
-
+            var file = Path.Combine(_outDir, filename);
+            await _fm.SaveData(lines, file, FileType.MARKDOWN);
         }
-        
+
         private string ProcessData(Answer ans)
         {
-            var answer   = ProcessMainText(ans.AnswerText, true);
+            var answer = ProcessMainText(ans.AnswerText, true);
             var question = ProcessMainText(ans.QuestionText, false);
-            var info     = ProcessAnswerInfo(ans);
-            var visuals  = "\n";
+            var info = ProcessAnswerInfo(ans);
+            var visuals = "\n";
             if (!string.IsNullOrEmpty(ans.VisualId))
                 visuals += ProcessVisuals(ans, ans.VisualType);
             var content = question + answer + "\n" + visuals + info + "***" + "\n";
@@ -83,7 +85,7 @@ namespace askfmArchiver
         {
             if (string.IsNullOrEmpty(text)) return "";
             var processedText = text;
-            var isArabic      = Regex.IsMatch(text, @"\p{IsArabic}");
+            var isArabic = Regex.IsMatch(text, @"\p{IsArabic}");
 
             if (ContainsLink(processedText))
             {
@@ -121,7 +123,7 @@ namespace askfmArchiver
         private string ProcessAnswerText(string text)
         {
             var isArabic = Regex.IsMatch(text, @"\p{IsArabic}");
-            var temp     = text;
+            var temp = text;
             text = "<div class=\"answer\">" + text + "</div>";
 
             if (isArabic)
@@ -136,7 +138,7 @@ namespace askfmArchiver
         private string FormatLinks(string text)
         {
             const string pattern = @"<link>(.*?)<\\link>";
-            var          matches = Regex.Matches(text, pattern, RegexOptions.IgnoreCase);
+            var matches = Regex.Matches(text, pattern, RegexOptions.IgnoreCase);
             foreach (var match in matches)
             {
                 var str = match.ToString().Replace("<link>", "")
@@ -153,16 +155,16 @@ namespace askfmArchiver
 
             return text;
         }
-        
+
         private string ProcessVisuals(Answer ans, FileType type)
         {
             string visuals;
             var visualFile = ans.VisualId + "." + ans.VisualExt;
-            var path = Path.Combine(_outDir,"visuals_" + ans.UserId, visualFile);
-            
+            var path = Path.Combine(_outDir, "visuals_" + ans.UserId, visualFile);
+
             if (type != FileType.IMG)
             {
-                var answerLink = "https://ask.fm/" + ans.UserId + "/answers/" +  ans.AnswerId;
+                var answerLink = "https://ask.fm/" + ans.UserId + "/answers/" + ans.AnswerId;
                 var url = string.IsNullOrEmpty(ans.VisualUrl) ? answerLink : ans.VisualUrl;
                 visuals = "<a target=\"_blank\" href=\"" + url + "\">Visual: " + type + "</a>";
             }
@@ -173,12 +175,12 @@ namespace askfmArchiver
 
             return visuals + "\n\n";
         }
-        
+
         private string ProcessAnswerInfo(Answer answer)
         {
             var processedText = "";
-            const string spacing       = "&emsp;&emsp;";
-            var link = "https://ask.fm/" + answer.UserId + "/answers/" +  answer.AnswerId; 
+            const string spacing = "&emsp;&emsp;";
+            var link = "https://ask.fm/" + answer.UserId + "/answers/" + answer.AnswerId;
             processedText += "<a target=\"_blank\" href=\"" + link + "\">" +
                              answer.Date.ToString("yyyy-MM-dd HH:mm") + "</a>" + spacing;
             processedText += "Likes: " + answer.Likes + spacing;
@@ -192,11 +194,9 @@ namespace askfmArchiver
 
         private string GenerateHeader()
         {
-            using var db = new MyDbContext();
-
-            var user = db.Users.First(u => u.UserId == _userId);
-            var qCount = db.Answers.Count(u => u.UserId == _userId);
-            var vCount = db.Answers.Count(v => v.VisualId != null && v.UserId == _userId);
+            var user = _dbContext.Users.First(u => u.UserId == _userId);
+            var qCount = _dbContext.Answers.Count(u => u.UserId == _userId);
+            var vCount = _dbContext.Answers.Count(v => v.VisualId != null && v.UserId == _userId);
             var headerText = "";
             headerText += "# " + user.UserName + " Askfm Archive\n";
             headerText += "## File Details:\n";
@@ -207,26 +207,25 @@ namespace askfmArchiver
             headerText += "---";
             return headerText;
         }
-        
+
         private bool ContainsLink(string text)
         {
             return text.Contains("<link>");
         }
-        
+
         private List<Answer> GetRecord()
         {
-            using var db = new MyDbContext();
-            var pdfGen = db.PdfGen.FirstOrDefault(u => u.UserId == _userId);
+            var pdfGen = _dbContext.PdfGen.FirstOrDefault(u => u.UserId == _userId);
             var stopAt = pdfGen?.StopAt ?? DateTime.MinValue;
 
-            var answers = db.Answers.
+            var answers = _dbContext.Answers.
                 Where(u => u.UserId == _userId && DateTime.Compare(u.Date, stopAt) > 0)
                 .OrderBy(u => u.Date).
                 ToList();
 
             if (answers.Count == 0)
                 return new List<Answer>();
-            
+
             foreach (var answer in answers.Where(answer => !_threadMap.TryAdd(answer.ThreadId, 0)))
             {
                 _threadMap[answer.ThreadId] = _threadMap[answer.ThreadId] + 1;
@@ -237,8 +236,7 @@ namespace askfmArchiver
 
         private void UpdatePdfTable(string answerId, DateTime stopAt)
         {
-            using var db = new MyDbContext();
-            var pdfGen = db.PdfGen.FirstOrDefault(u => u.UserId == _userId);
+            var pdfGen = _dbContext.PdfGen.FirstOrDefault(u => u.UserId == _userId);
             if (pdfGen != null)
             {
                 pdfGen.AnswerId = answerId;
@@ -250,11 +248,11 @@ namespace askfmArchiver
                 {
                     UserId = _userId,
                     StopAt = stopAt,
-                    AnswerId = answerId 
+                    AnswerId = answerId
                 };
-                db.Add(pdfGen);
+                _dbContext.Add(pdfGen);
             }
-            db.SaveChanges();
+            _dbContext.SaveChanges();
         }
     }
 }
