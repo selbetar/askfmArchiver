@@ -10,18 +10,22 @@ using askfmArchiver.Utils;
 
 namespace askfmArchiver
 {
-    public class MarkDown
+    public class MarkDown : IMarkDown
     {
         private readonly string _userId;
         private readonly string _outDir;
+        private readonly Dictionary<string, int> _threadMap; // tid, thread count
 
-        // tid, thread count
-        private readonly Dictionary<string, int> _threadMap;
+        private readonly IFileManager _fm;
+        private readonly MyDbContext _dbContext;
 
-        public MarkDown(string userId, string outDir = @"./output")
+        public MarkDown(MyDbContext dbContext, IFileManager fm, IOptions options)
         {
-            _userId = userId.ToLower();
-            _outDir = outDir;
+            _dbContext = dbContext;
+            _fm = fm;
+
+            _userId = options.UserId.ToLower();
+            _outDir = options.Output;
             _threadMap = new Dictionary<string, int>();
         }
         public async Task Generate()
@@ -60,10 +64,8 @@ namespace askfmArchiver
 
         private async Task SaveFile(List<string> lines, string filename)
         {
-            var fm = new FileManager();
             var file = Path.Combine(_outDir, filename);
-            await fm.SaveData(lines, file, FileType.MARKDOWN);
-
+            await _fm.SaveData(lines, file, FileType.MARKDOWN);
         }
 
         private string ProcessData(Answer ans)
@@ -192,11 +194,9 @@ namespace askfmArchiver
 
         private string GenerateHeader()
         {
-            using var db = new MyDbContext();
-
-            var user = db.Users.First(u => u.UserId == _userId);
-            var qCount = db.Answers.Count(u => u.UserId == _userId);
-            var vCount = db.Answers.Count(v => v.VisualId != null && v.UserId == _userId);
+            var user = _dbContext.Users.First(u => u.UserId == _userId);
+            var qCount = _dbContext.Answers.Count(u => u.UserId == _userId);
+            var vCount = _dbContext.Answers.Count(v => v.VisualId != null && v.UserId == _userId);
             var headerText = "";
             headerText += "# " + user.UserName + " Askfm Archive\n";
             headerText += "## File Details:\n";
@@ -215,11 +215,10 @@ namespace askfmArchiver
 
         private List<Answer> GetRecord()
         {
-            using var db = new MyDbContext();
-            var pdfGen = db.PdfGen.FirstOrDefault(u => u.UserId == _userId);
+            var pdfGen = _dbContext.PdfGen.FirstOrDefault(u => u.UserId == _userId);
             var stopAt = pdfGen?.StopAt ?? DateTime.MinValue;
 
-            var answers = db.Answers.
+            var answers = _dbContext.Answers.
                 Where(u => u.UserId == _userId && DateTime.Compare(u.Date, stopAt) > 0)
                 .OrderBy(u => u.Date).
                 ToList();
@@ -237,8 +236,7 @@ namespace askfmArchiver
 
         private void UpdatePdfTable(string answerId, DateTime stopAt)
         {
-            using var db = new MyDbContext();
-            var pdfGen = db.PdfGen.FirstOrDefault(u => u.UserId == _userId);
+            var pdfGen = _dbContext.PdfGen.FirstOrDefault(u => u.UserId == _userId);
             if (pdfGen != null)
             {
                 pdfGen.AnswerId = answerId;
@@ -252,9 +250,9 @@ namespace askfmArchiver
                     StopAt = stopAt,
                     AnswerId = answerId
                 };
-                db.Add(pdfGen);
+                _dbContext.Add(pdfGen);
             }
-            db.SaveChanges();
+            _dbContext.SaveChanges();
         }
     }
 }
