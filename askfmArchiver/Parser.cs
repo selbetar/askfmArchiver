@@ -270,12 +270,8 @@ namespace askfmArchiver
             var node = article.SelectSingleNode(article.XPath + "//div[@class='streamItem_content']") ??
                        article.SelectSingleNode(article.XPath + "//div[@class='asnwerCard_text']");
 
-            if (node == null)
-            {
-                _log.LogInformation("ParseAnswer(): answer with answerID: {answerId} has no text.",
-                    dataObject.AnswerId);
-                return;
-            }
+            if (node == null) return;
+
 
             // elements are wrapped in <span> if the language is RTL
             if (node.FirstChild is { Name: "span" })
