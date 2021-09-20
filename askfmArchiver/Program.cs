@@ -24,12 +24,32 @@ namespace askfmArchiver
 
             var archive = false;
             IHost host = null;
+            var configDir = "";
+            var dbSource = "";
             CommandLine.Parser.Default.ParseArguments<Options>(args)
                 .WithParsed(options =>
                 {
                     options.UserId = options.UserId.ToLower();
-                    var builder = BuildConfig(options);
 
+                    options.Output = options.Output == ""
+                        ? Path.Combine(Directory.GetCurrentDirectory(), "output")
+                        : Path.GetFullPath(options.Output);
+                    Directory.CreateDirectory(options.Output);
+
+                    options.Config = options.Config == ""
+                        ? Path.Combine(Directory.GetCurrentDirectory(), "config")
+                        : Path.GetFullPath(options.Config);
+                    Directory.CreateDirectory(options.Config);
+                    configDir = options.Config;
+
+                    var builder = BuildConfig(options);
+                    WriteDefaultConfig(Path.Combine(configDir, "appsettings.json"));
+
+                    options.DbFile = options.DbFile == null ? Path.Combine(options.Config, "data.db") : options.DbFile;
+                    dbSource = options.DbFile;
+
+                    var logFileName = "askfmArchiver-" + DateTime.Now.ToString("yyyy-MM-dd") + ".log";
+                    var logFile = Path.Combine(options.Output, "log", logFileName);
                     Log.Logger = new LoggerConfiguration()
                         .ReadFrom.Configuration(builder.Build())
                         .Enrich.FromLogContext()
@@ -37,11 +57,11 @@ namespace askfmArchiver
                         .WriteTo.File("log_askfm.log", LogEventLevel.Warning)
                         .CreateLogger();
 
+
                     host = Host.CreateDefaultBuilder()
                         .ConfigureServices((context, services) =>
                         {
 
-                            CreateTables(context.Configuration.GetConnectionString("DefaultConnection"));
 
                             if (options.Archive)
                             {
@@ -55,7 +75,7 @@ namespace askfmArchiver
                             }
 
                             services.AddDbContext<MyDbContext>(opts =>
-                                opts.UseSqlite(context.Configuration.GetConnectionString("DefaultConnection")));
+                                opts.UseSqlite());
                             services.AddSingleton<IFileManager, FileManager>();
                             services.AddSingleton<IOptions>(options);
                         })
@@ -64,6 +84,8 @@ namespace askfmArchiver
 
                 })
                 .WithNotParsed(HandleParseError);
+
+            CreateTables(dbSource);
 
             if (archive)
             {
@@ -84,15 +106,10 @@ namespace askfmArchiver
         private static ConfigurationBuilder BuildConfig(Options options)
         {
             var builder = new ConfigurationBuilder();
-            options.Output = options.Output == ""
-                ? Path.Combine(Directory.GetCurrentDirectory(), "output")
-                : Path.GetFullPath(options.Output);
-
-            Directory.CreateDirectory(options.Output);
 
             var env = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? Environments.Development;
-            builder.SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            builder.SetBasePath(options.Config)
+                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
                 .AddJsonFile($"appsettings.{env}.json",
                     optional: true, reloadOnChange: true)
                 .AddEnvironmentVariables();
@@ -120,10 +137,16 @@ namespace askfmArchiver
                     services.AddDbContext<MyDbContext>(opts =>
                         opts.UseSqlite(context.Configuration.GetConnectionString("DefaultConnection"))));
 
-
-        private static void CreateTables(string connectionStr)
+        private static void CreateTables(string dataSource)
         {
-            using var connection = new SqliteConnection(connectionStr);
+            var conStr = new SqliteConnectionStringBuilder()
+            {
+                DataSource = dataSource,
+                RecursiveTriggers = true,
+                ForeignKeys = true,
+            }.ToString();
+
+            using var connection = new SqliteConnection(conStr);
             string[] queries =
             {
                 @"CREATE TABLE IF NOT EXISTS Users(
@@ -169,6 +192,16 @@ namespace askfmArchiver
 
             command.Dispose();
             connection.Close();
+        }
+
+
+        private static void WriteDefaultConfig(string configFile)
+        {
+            const string config = "{\"Serilog\":{\"MinimumLevel\":{\"Default\":\"Information\",\"Override\":{\"Microsoft\":\"Warning\",\"System\":\"Warning\"}},\"Enrich\":[\"FromLogContext\"]}}";
+
+            if (File.Exists(configFile)) return;
+
+            File.WriteAllText(configFile, config);
         }
     }
 }
