@@ -10,9 +10,13 @@ namespace askfmArchiver.Utils
         public string UserId { get; set; }
 
 
-        [Option('o', "out", Required = false,
+        [Option('o', "out", Required = false, Default = "",
             HelpText = "Specify the output folder where any downloaded or generated files will be saved.")]
         public string Output { get; set; }
+
+        [Option('c', "config", Required = false, Default = "",
+            HelpText = "Specify the config folder app configuration is saved.")]
+        public string Config { get; set; }
 
         [Option('a', "archive", Required = true, SetName = "parse",
             HelpText = "Execute an archival job for the specified user.")]
@@ -33,7 +37,7 @@ namespace askfmArchiver.Utils
             HelpText = "Generate markdown file(s) for the specified user.")]
         public bool Markdown { get; set; }
 
-        [Option('d', "db", Required = false, Default = "",
+        [Option('d', "db", Required = false,
             HelpText = "Path to the database file.")]
         public string DbFile { get; set; }
 
