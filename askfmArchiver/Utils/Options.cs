@@ -5,19 +5,24 @@ namespace askfmArchiver.Utils
 {
     public class Options : IOptions
     {
-        [Option('u', "user USER", Required = true,
+        [Option('u', "user", Required = true,
             HelpText = "The userid of the askfm profile")]
         public string UserId { get; set; }
 
-        [Option('o', "out FOLDER", Required = false, Default = "",
+
+        [Option('o', "out", Required = false, Default = "",
             HelpText = "Specify the output folder where any downloaded or generated files will be saved.")]
         public string Output { get; set; }
+
+        [Option('c', "config", Required = false, Default = "",
+            HelpText = "Specify the config folder app configuration is saved.")]
+        public string Config { get; set; }
 
         [Option('a', "archive", Required = true, SetName = "parse",
             HelpText = "Execute an archival job for the specified user.")]
         public bool Archive { get; set; }
 
-        [Option('p', "page ITERATOR", Required = false, SetName = "parse",
+        [Option('p', "page", Required = false, SetName = "parse",
             HelpText = "The page iterator (id) at which archiving should start. Useful if parsing" +
                                     " was interrupted.", Default = "")]
         public string PageIterator { get; set; }
@@ -32,7 +37,7 @@ namespace askfmArchiver.Utils
             HelpText = "Generate markdown file(s) for the specified user.")]
         public bool Markdown { get; set; }
 
-        [Option('d', "db", Required = false, Default = "",
+        [Option('d', "db", Required = false,
             HelpText = "Path to the database file.")]
         public string DbFile { get; set; }
 

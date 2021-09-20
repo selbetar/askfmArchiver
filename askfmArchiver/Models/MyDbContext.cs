@@ -1,3 +1,6 @@
+using System.IO;
+using askfmArchiver.Utils;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -11,14 +14,25 @@ namespace askfmArchiver.Models
         public DbSet<PdfGen> PdfGen { get; set; }
 
         private readonly IConfiguration _config;
+        private readonly IOptions _options;
 
-        public MyDbContext(DbContextOptions<MyDbContext> options, IConfiguration config) : base(options)
+        public MyDbContext(DbContextOptions<MyDbContext> options, IConfiguration config, IOptions cmdOptions) : base(options)
         {
             _config = config;
+            _options = cmdOptions;
+
         }
         protected override void OnConfiguring(DbContextOptionsBuilder options)
         {
-            options.UseSqlite(_config.GetConnectionString("DefaultConnection"));
+            var dataSource = _options.DbFile == null ? Path.Combine(_options.Config, "data.db") : _options.DbFile;
+            var con = new SqliteConnectionStringBuilder()
+            {
+                DataSource = dataSource,
+                RecursiveTriggers = true,
+                ForeignKeys = true,
+            }.ToString();
+
+            options.UseSqlite(con);
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)

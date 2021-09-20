@@ -6,6 +6,7 @@ namespace askfmArchiver.Utils
     {
         string UserId { get; }
         string Output { get; }
+        string Config { get; }
         bool Archive { get; }
         string PageIterator { get; }
         DateTime StopAt { get; }
