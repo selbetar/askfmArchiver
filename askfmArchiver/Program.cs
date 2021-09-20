@@ -30,11 +30,14 @@ namespace askfmArchiver
                     options.UserId = options.UserId.ToLower();
                     var builder = BuildConfig(options);
 
+
+                    var logFileName = "askfmArchiver-" + DateTime.Now.ToString("yyyy-MM-dd") + ".log";
+                    var logFile = Path.Combine(options.Output, "log", logFileName);
                     Log.Logger = new LoggerConfiguration()
                         .ReadFrom.Configuration(builder.Build())
                         .Enrich.FromLogContext()
                         .WriteTo.Console()
-                        .WriteTo.File("log_askfm.log", LogEventLevel.Warning)
+                        .WriteTo.File(logFile, LogEventLevel.Warning)
                         .CreateLogger();
 
                     host = Host.CreateDefaultBuilder()
