@@ -5,11 +5,12 @@ namespace askfmArchiver.Utils
 {
     public class Options : IOptions
     {
-        [Option('u', "user USER", Required = true,
+        [Option('u', "user", Required = true,
             HelpText = "The userid of the askfm profile")]
         public string UserId { get; set; }
 
-        [Option('o', "out FOLDER", Required = false, Default = "",
+
+        [Option('o', "out", Required = false,
             HelpText = "Specify the output folder where any downloaded or generated files will be saved.")]
         public string Output { get; set; }
 
@@ -17,7 +18,7 @@ namespace askfmArchiver.Utils
             HelpText = "Execute an archival job for the specified user.")]
         public bool Archive { get; set; }
 
-        [Option('p', "page ITERATOR", Required = false, SetName = "parse",
+        [Option('p', "page", Required = false, SetName = "parse",
             HelpText = "The page iterator (id) at which archiving should start. Useful if parsing" +
                                     " was interrupted.", Default = "")]
         public string PageIterator { get; set; }
