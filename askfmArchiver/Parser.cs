@@ -454,14 +454,22 @@ namespace askfmArchiver
 
         private int ExtractAnswerCount(HtmlDocument html)
         {
-            var node = html.
-                DocumentNode.
-                SelectSingleNode("//div[@class='profileTabAnswerCount text-large']");
+            HtmlNode node = null;
+            try
+            {
+                node = html.
+                    DocumentNode.
+                    SelectSingleNode("//div[@class='profileTabAnswerCount text-large']");
+            }
+            catch (Exception e)
+            {
+                _log.LogError("{errorMsg}", e.Message);
+            }
 
             if (node == null)
             {
                 _log.LogWarning("ExtractAnswerCount(): Couldn't extract the answer count. " +
-                                "Progress Info can't be reported.");
+                                "Progress percentage can't be reported.");
                 return -1;
             }
 
@@ -481,8 +489,16 @@ namespace askfmArchiver
 
         private void SetUserName(HtmlDocument html)
         {
-            _userName = html.DocumentNode.SelectSingleNode("//span[@class='ellipsis lh-spacy']")
-                .FirstChild.InnerText;
+            try
+            {
+                _userName = html.DocumentNode.SelectSingleNode("//span[@class='ellipsis lh-spacy']")
+                    .FirstChild.InnerText;
+            }
+            catch (Exception e)
+            {
+                _userName = "";
+                _log.LogError("failed to extract the username\n{errorMsg}", e.Message);
+            }
         }
         private bool HasThreads(HtmlNode question)
         {
@@ -552,7 +568,8 @@ namespace askfmArchiver
         private void UpdateUser()
         {
             var user = _dbContext.Users.First(u => u.UserId == _options.UserId);
-            user.UserName = _userName;
+            // if _userName is empty, then we failed to extract it, so we keep the old vlaue
+            if (_userName != "") user.UserName = _userName;
             user.LastQuestion = _answers.First().Date;
             user.FirstQuestion = user.FirstQuestion == default ? _answers.Last().Date : user.FirstQuestion;
             _dbContext.SaveChanges();
@@ -589,6 +606,13 @@ namespace askfmArchiver
 
         private void PrintProgress(double extractedCount)
         {
+            // this indicates we failed to extract the answer count.
+            // we don't report percentage in this case
+            if (_totalAnswerCount == -1) {
+                Console.Write("\rExtracted: {0}   ",extractedCount);
+                return;
+            }
+
             var percent = (double)(extractedCount / _totalAnswerCount) * 100;
             if (percent >= 100)
                 percent = _lastPercentage;
