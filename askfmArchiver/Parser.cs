@@ -287,7 +287,7 @@ namespace askfmArchiver
                     "span" => "",
                     _ => "\n"
                 });
-            
+
             var htmlText = WebUtility.HtmlDecode(answer.Trim());
             dataObject.AnswerText = htmlText;
         }
@@ -644,6 +644,54 @@ namespace askfmArchiver
             }
 
             LoadSets();
+        }
+
+        public async Task VisualDownloadRecovery(string id)
+        {
+            var url = CreateUrl(BaseUrl, _options.UserId);
+            url += "/answers/" + id;
+            _log.LogInformation(url);
+            var html = await GetHtmlDoc(url);
+            var article = html.DocumentNode.SelectSingleNode("//article[@class='item streamItem streamItem-single']");
+
+            var node = article.SelectSingleNode(article.XPath + "//div[@class='streamItem_visual']");
+            if (node == null)
+            {
+                Console.WriteLine(id);
+                return;
+            }
+
+            var videoNode = node.SelectSingleNode(node.XPath + "//div[@class='rsp-eql-desktop']");
+            var dataObject = new Answer();
+
+            var srcUrl = videoNode != null ?
+                ExtractVideo(videoNode, dataObject)
+                : ExtractPhoto(node, dataObject);
+
+            if (srcUrl == "")
+            {
+                _log.LogWarning("Failed to extract visuals for {userId}:{answerId}.", _options.UserId, id);
+                return;
+            }
+
+            var extension = srcUrl.Split(".").Last().Trim();
+            dataObject.VisualUrl = srcUrl;
+            dataObject.VisualExt = extension;
+
+            var fileName = id + "." + extension.Trim();
+            var file = Path.Combine(_options.Output, "visuals_" + _options.UserId, fileName);
+
+            try
+            {
+                await _networkManager.DownloadMedia(srcUrl, file);
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning("ParseVisuals(): Failed to download media for {userId}:{visualId} with url {url} \n" +
+                              "{errMsg}\n{stackTrace}",
+                    dataObject.UserId, id, srcUrl, e.Message, e.StackTrace);
+                return;
+            }
         }
     }
 }
