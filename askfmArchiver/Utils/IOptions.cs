@@ -12,6 +12,8 @@ namespace askfmArchiver.Utils
         DateTime StopAt { get; }
         bool Markdown { get; }
         string DbFile { get; }
+        bool RestMd { get; }
+        bool Descending { get; }
 
     }
 }

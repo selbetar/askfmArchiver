@@ -41,5 +41,13 @@ namespace askfmArchiver.Utils
             HelpText = "Path to the database file.")]
         public string DbFile { get; set; }
 
+        [Option('D', "descending", Required = false, Default = false,
+    HelpText = "Specify output folder where any downloaded or generated files will be saved.")]
+        public bool Descending { get; set; }
+
+        [Option('r', "reset", Required = false, Default = false,
+            HelpText = "Specify output folder where any downloaded or generated files will be saved.")]
+        public bool RestMd { get; set; }
+
     }
 }
