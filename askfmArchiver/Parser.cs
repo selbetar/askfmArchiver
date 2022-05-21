@@ -11,6 +11,7 @@ using askfmArchiver.Utils;
 using HtmlAgilityPack;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Net;
 
 namespace askfmArchiver
 {
@@ -53,7 +54,6 @@ namespace askfmArchiver
             _totalAnswerCount = 0.0;
             _lastPercentage = 0.0;
         }
-
 
         public async Task Parse()
         {
@@ -196,7 +196,6 @@ namespace askfmArchiver
             {
                 var nodes = question.SelectNodes(question.XPath + "//a[@class='streamItem_meta']");
                 var node = nodes.First(nd => nd.Attributes.Contains("href")
-                                             && nd.Attributes.Contains("title")
                                              && nd.Attributes.Contains("class")
                                              && nd.GetAttributeValue("href", "") != "");
 
@@ -262,7 +261,9 @@ namespace askfmArchiver
                     "a" => "<link>" + child.InnerText + "<\\link>",
                     _ => child.InnerText
                 });
-            dataObject.QuestionText = question.Trim();
+
+            var htmlText = WebUtility.HtmlDecode(question.Trim());
+            dataObject.QuestionText = htmlText;
         }
 
         private void ParseAnswer(HtmlNode article, Answer dataObject)
@@ -286,8 +287,9 @@ namespace askfmArchiver
                     "span" => "",
                     _ => "\n"
                 });
-
-            dataObject.AnswerText = answer.Trim();
+            
+            var htmlText = WebUtility.HtmlDecode(answer.Trim());
+            dataObject.AnswerText = htmlText;
         }
 
         private async Task ParseVisuals(HtmlNode article, Answer dataObject)
@@ -426,7 +428,7 @@ namespace askfmArchiver
 
         private async Task<Tuple<HtmlDocument, string>> GetNextPage(HtmlDocument html)
         {
-            var nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next']");
+            var nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next enabled']");
             if (nextPageNode == null)
             {
                 _isLastPage = true;
@@ -454,7 +456,7 @@ namespace askfmArchiver
         {
             var node = html.
                 DocumentNode.
-                SelectSingleNode("//div[@class='profileStats_number profileTabAnswerCount']");
+                SelectSingleNode("//div[@class='profileTabAnswerCount text-large']");
 
             if (node == null)
             {
@@ -479,7 +481,7 @@ namespace askfmArchiver
 
         private void SetUserName(HtmlDocument html)
         {
-            _userName = html.DocumentNode.SelectSingleNode("//h1[@class='userName_status']")
+            _userName = html.DocumentNode.SelectSingleNode("//span[@class='ellipsis lh-spacy']")
                 .FirstChild.InnerText;
         }
         private bool HasThreads(HtmlNode question)
@@ -643,6 +645,5 @@ namespace askfmArchiver
 
             LoadSets();
         }
-
     }
 }
