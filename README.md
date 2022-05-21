@@ -7,8 +7,7 @@ A cross-platform tool to archive an ask.fm user profile.
 ## Overview
 The tool archives a user profile and extracts all textual information and any attachment in the answer or the question section. The only information it skips are polls.
 
-The tool can also generate a markdown file of the parsed data that can be converted to HTML or PDF (using another tool) if the type is set to **markdown**.
-An example pdf that was created from the generated markdown file and the provided css file `markdown-pdf.css` can be found in the `example` folder.
+The tool can also generate a markdown file of the parsed data that can be converted to HTML or PDF (using another tool). An example pdf that was created from the generated markdown file and the provided css file `markdown-pdf.css` can be found in the `example` folder.
 
 # Installation
 
@@ -50,7 +49,7 @@ In the binary directory, execute the following command:
 
   -o, --out           (Default: ) Specify the output folder where any downloaded or generated files will be saved.
 
-  -c, --config        (Default: ) Specify the config folder where app configuration is saved.
+  -c, --config        (Default: ) Specify the config folder where the app configuration file is located.
 
   -d, --db            Path to the database file.
 
