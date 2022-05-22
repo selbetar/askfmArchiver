@@ -15,7 +15,7 @@ namespace askfmArchiver.Utils
         public string Output { get; set; }
 
         [Option('c', "config", Required = false, Default = "",
-            HelpText = "Specify the config folder app configuration is saved.")]
+            HelpText = "Specify the config folder where the app configuration file is located.")]
         public string Config { get; set; }
 
         [Option('a', "archive", Required = true, SetName = "parse",
@@ -40,6 +40,14 @@ namespace askfmArchiver.Utils
         [Option('d', "db", Required = false,
             HelpText = "Path to the database file.")]
         public string DbFile { get; set; }
+
+        [Option('D', "descending", Required = false, Default = false,
+    HelpText = "Specify output folder where any downloaded or generated files will be saved.")]
+        public bool Descending { get; set; }
+
+        [Option('r', "reset", Required = false, Default = false,
+            HelpText = "Specify output folder where any downloaded or generated files will be saved.")]
+        public bool RestMd { get; set; }
 
     }
 }

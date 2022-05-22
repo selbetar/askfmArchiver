@@ -14,6 +14,9 @@ namespace askfmArchiver
     {
         private readonly string _userId;
         private readonly string _outDir;
+        private readonly bool _isDescending;
+        private readonly bool _resetMd;
+
         private readonly Dictionary<string, int> _threadMap; // tid, thread count
 
         private readonly IFileManager _fm;
@@ -26,6 +29,8 @@ namespace askfmArchiver
 
             _userId = options.UserId.ToLower();
             _outDir = options.Output;
+            _resetMd = options.RestMd;
+            _isDescending = options.Descending;
             _threadMap = new Dictionary<string, int>();
         }
         public async Task Generate()
@@ -57,7 +62,8 @@ namespace askfmArchiver
                 await SaveFile(lines, file);
 
             var info = GenerateHeader();
-            UpdatePdfTable(answers.Last().AnswerId, answers.Last().Date);
+            var stopAt = _isDescending ? answers.First().Date : answers.Last().Date;
+            UpdatePdfTable(answers.Last().AnswerId, stopAt);
             await SaveFile(new List<string> { info }, "info_" + _userId);
             Console.WriteLine("Markdown generation has finished: Generated {0} files", fileCount + 1);
         }
@@ -109,11 +115,11 @@ namespace askfmArchiver
             var isArabic = Regex.IsMatch(text, @"\p{IsArabic}");
             if (isArabic)
             {
-                text = "<pre style= \"text-align: right\">" + text + "</pre>";
+                text = "<blockquote style= \"text-align: right\">" + text + "</blockquote>";
             }
             else
             {
-                text = "<pre>" + text + "</pre>";
+                text = "<blockquote>" + text + "</blockquote>";
             }
 
             text += "\n";
@@ -170,7 +176,7 @@ namespace askfmArchiver
             }
             else
             {
-                visuals = "![MISSING: Visuals Folder](" + path + ")";
+                visuals = "![MISSING VISUAL!](" + path + ")";
             }
 
             return visuals + "\n\n";
@@ -182,10 +188,12 @@ namespace askfmArchiver
             const string spacing = "&emsp;&emsp;";
             var link = "https://ask.fm/" + answer.UserId + "/answers/" + answer.AnswerId;
             processedText += "<a target=\"_blank\" href=\"" + link + "\">" +
-                             answer.Date.ToString("yyyy-MM-dd HH:mm") + "</a>" + spacing;
-            processedText += "Likes: " + answer.Likes + spacing;
-            processedText += "ThreadCount: " + _threadMap[answer.ThreadId] + "  " + spacing;
+                             answer.Date.ToString("yyyy-MM-dd HH:mm:ss") + "</a>" + spacing;
+            processedText += "Answer ID: " + answer.AnswerId + spacing;
+            processedText += "Thread ID: " + answer.ThreadId + spacing;
+            
             if (string.IsNullOrEmpty(answer.AuthorId)) return processedText + "\n";
+
             var authorLink = "https://ask.fm/" + answer.AuthorId;
             processedText += "Question By: " + "<a target=\"_blank\" href=\"" + authorLink + "\">"
                              + answer.AuthorId + "</a>";
@@ -200,8 +208,8 @@ namespace askfmArchiver
             var headerText = "";
             headerText += "# " + user.UserName + " Askfm Archive\n";
             headerText += "## File Details:\n";
-            headerText += "First Question Date: " + user.FirstQuestion + "\n\n";
-            headerText += "Last Question Date: " + user.LastQuestion + "\n\n";
+            headerText += "First Question Date: " + user.FirstQuestion.ToString("dd/MM/yyyy") + "\n\n";
+            headerText += "Last Question Date: " + user.LastQuestion.ToString("dd/MM/yyyy") + "\n\n";
             headerText += "Number of Questions: " + qCount + "\n\n";
             headerText += "Number of Visuals: " + vCount + "\n\n";
             headerText += "---";
@@ -218,10 +226,25 @@ namespace askfmArchiver
             var pdfGen = _dbContext.PdfGen.FirstOrDefault(u => u.UserId == _userId);
             var stopAt = pdfGen?.StopAt ?? DateTime.MinValue;
 
-            var answers = _dbContext.Answers.
-                Where(u => u.UserId == _userId && DateTime.Compare(u.Date, stopAt) > 0)
-                .OrderBy(u => u.Date).
-                ToList();
+            if (_resetMd)
+            {
+                stopAt = DateTime.MinValue;
+            }
+            List<Answer> answers;
+            if (!_isDescending)
+            {
+                answers = _dbContext.Answers.
+                                Where(u => u.UserId == _userId && DateTime.Compare(u.Date, stopAt) > 0)
+                                .OrderBy(u => u.Date).
+                                ToList();
+            }
+            else
+            {
+                answers = _dbContext.Answers.
+                                Where(u => u.UserId == _userId && DateTime.Compare(u.Date, stopAt) > 0)
+                                .OrderByDescending(u => u.Date).
+                                ToList();
+            }
 
             if (answers.Count == 0)
                 return new List<Answer>();

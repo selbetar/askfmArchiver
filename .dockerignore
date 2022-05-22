@@ -4,3 +4,6 @@ output/
 ci/
 example/
 markdown-pdf.css
+.vscode
+.github
+.devcontainer

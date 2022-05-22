@@ -11,6 +11,7 @@ using askfmArchiver.Utils;
 using HtmlAgilityPack;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Net;
 
 namespace askfmArchiver
 {
@@ -53,7 +54,6 @@ namespace askfmArchiver
             _totalAnswerCount = 0.0;
             _lastPercentage = 0.0;
         }
-
 
         public async Task Parse()
         {
@@ -196,7 +196,6 @@ namespace askfmArchiver
             {
                 var nodes = question.SelectNodes(question.XPath + "//a[@class='streamItem_meta']");
                 var node = nodes.First(nd => nd.Attributes.Contains("href")
-                                             && nd.Attributes.Contains("title")
                                              && nd.Attributes.Contains("class")
                                              && nd.GetAttributeValue("href", "") != "");
 
@@ -262,7 +261,9 @@ namespace askfmArchiver
                     "a" => "<link>" + child.InnerText + "<\\link>",
                     _ => child.InnerText
                 });
-            dataObject.QuestionText = question.Trim();
+
+            var htmlText = WebUtility.HtmlDecode(question.Trim());
+            dataObject.QuestionText = htmlText;
         }
 
         private void ParseAnswer(HtmlNode article, Answer dataObject)
@@ -287,7 +288,8 @@ namespace askfmArchiver
                     _ => "\n"
                 });
 
-            dataObject.AnswerText = answer.Trim();
+            var htmlText = WebUtility.HtmlDecode(answer.Trim());
+            dataObject.AnswerText = htmlText;
         }
 
         private async Task ParseVisuals(HtmlNode article, Answer dataObject)
@@ -426,7 +428,7 @@ namespace askfmArchiver
 
         private async Task<Tuple<HtmlDocument, string>> GetNextPage(HtmlDocument html)
         {
-            var nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next']");
+            var nextPageNode = html.DocumentNode.SelectNodes("//a[@class='item-page-next enabled']");
             if (nextPageNode == null)
             {
                 _isLastPage = true;
@@ -452,14 +454,22 @@ namespace askfmArchiver
 
         private int ExtractAnswerCount(HtmlDocument html)
         {
-            var node = html.
-                DocumentNode.
-                SelectSingleNode("//div[@class='profileStats_number profileTabAnswerCount']");
+            HtmlNode node = null;
+            try
+            {
+                node = html.
+                    DocumentNode.
+                    SelectSingleNode("//div[@class='profileTabAnswerCount text-large']");
+            }
+            catch (Exception e)
+            {
+                _log.LogError("{errorMsg}", e.Message);
+            }
 
             if (node == null)
             {
                 _log.LogWarning("ExtractAnswerCount(): Couldn't extract the answer count. " +
-                                "Progress Info can't be reported.");
+                                "Progress percentage can't be reported.");
                 return -1;
             }
 
@@ -479,8 +489,16 @@ namespace askfmArchiver
 
         private void SetUserName(HtmlDocument html)
         {
-            _userName = html.DocumentNode.SelectSingleNode("//h1[@class='userName_status']")
-                .FirstChild.InnerText;
+            try
+            {
+                _userName = html.DocumentNode.SelectSingleNode("//span[@class='ellipsis lh-spacy']")
+                    .FirstChild.InnerText;
+            }
+            catch (Exception e)
+            {
+                _userName = "";
+                _log.LogError("failed to extract the username\n{errorMsg}", e.Message);
+            }
         }
         private bool HasThreads(HtmlNode question)
         {
@@ -550,7 +568,8 @@ namespace askfmArchiver
         private void UpdateUser()
         {
             var user = _dbContext.Users.First(u => u.UserId == _options.UserId);
-            user.UserName = _userName;
+            // if _userName is empty, then we failed to extract it, so we keep the old vlaue
+            if (_userName != "") user.UserName = _userName;
             user.LastQuestion = _answers.First().Date;
             user.FirstQuestion = user.FirstQuestion == default ? _answers.Last().Date : user.FirstQuestion;
             _dbContext.SaveChanges();
@@ -587,6 +606,13 @@ namespace askfmArchiver
 
         private void PrintProgress(double extractedCount)
         {
+            // this indicates we failed to extract the answer count.
+            // we don't report percentage in this case
+            if (_totalAnswerCount == -1) {
+                Console.Write("\rExtracted: {0}   ",extractedCount);
+                return;
+            }
+
             var percent = (double)(extractedCount / _totalAnswerCount) * 100;
             if (percent >= 100)
                 percent = _lastPercentage;
@@ -644,5 +670,52 @@ namespace askfmArchiver
             LoadSets();
         }
 
+        public async Task VisualDownloadRecovery(string id)
+        {
+            var url = CreateUrl(BaseUrl, _options.UserId);
+            url += "/answers/" + id;
+            _log.LogInformation(url);
+            var html = await GetHtmlDoc(url);
+            var article = html.DocumentNode.SelectSingleNode("//article[@class='item streamItem streamItem-single']");
+
+            var node = article.SelectSingleNode(article.XPath + "//div[@class='streamItem_visual']");
+            if (node == null)
+            {
+                Console.WriteLine(id);
+                return;
+            }
+
+            var videoNode = node.SelectSingleNode(node.XPath + "//div[@class='rsp-eql-desktop']");
+            var dataObject = new Answer();
+
+            var srcUrl = videoNode != null ?
+                ExtractVideo(videoNode, dataObject)
+                : ExtractPhoto(node, dataObject);
+
+            if (srcUrl == "")
+            {
+                _log.LogWarning("Failed to extract visuals for {userId}:{answerId}.", _options.UserId, id);
+                return;
+            }
+
+            var extension = srcUrl.Split(".").Last().Trim();
+            dataObject.VisualUrl = srcUrl;
+            dataObject.VisualExt = extension;
+
+            var fileName = id + "." + extension.Trim();
+            var file = Path.Combine(_options.Output, "visuals_" + _options.UserId, fileName);
+
+            try
+            {
+                await _networkManager.DownloadMedia(srcUrl, file);
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning("ParseVisuals(): Failed to download media for {userId}:{visualId} with url {url} \n" +
+                              "{errMsg}\n{stackTrace}",
+                    dataObject.UserId, id, srcUrl, e.Message, e.StackTrace);
+                return;
+            }
+        }
     }
 }
