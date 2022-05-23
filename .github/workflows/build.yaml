@@ -60,9 +60,6 @@ jobs:
           echo "$CHANGELOG" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      - name: debug
-        run: echo "${{ env.CHANGELOG }}"
-
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
@@ -70,5 +67,5 @@ jobs:
           files: "${{ env.RELEASE_NAME }}.zip"
           body: |
             ### Changelog:
-            "${{ env.CHANGELOG }}"
+            ${{ env.CHANGELOG }}
           draft: true
