@@ -20,7 +20,7 @@ The downloaded zip file can be extracted using a tool like [7zip](https://www.7-
 
 ## DOCKER
 ```bash
-docker run --rm -v $(pwd):/data 'ghcr.io/selbetar/askfmArchiver:latest' --db /data/data.db --out /data/askfm-output [OPTIONS]
+docker run --rm -v $(pwd):/data 'ghcr.io/selbetar/askfmarchiver:latest' --db /data/data.db --out /data/askfm-output [OPTIONS]
 ```
 
 ## BUILD FROM SOURCE
