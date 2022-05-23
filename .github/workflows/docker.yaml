@@ -39,5 +39,5 @@ jobs:
         with:
           push: true
           tags: |
-            ghcr.io/selbetar/askfmArchiver:latest
-            ghcr.io/selbetar/askfmArchiver:${{ env.IMAGE_VERSION }}
+            ghcr.io/selbetar/askfmarchiver:latest
+            ghcr.io/selbetar/askfmarchiver:${{ env.IMAGE_VERSION }}
