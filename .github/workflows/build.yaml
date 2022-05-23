@@ -55,7 +55,13 @@ jobs:
 
       - name: Get release notes
         run: |
-          echo "CHANGELOG=$(cat Changelog.md | grep -oPz '(?s)(?<=### ${{ env.askfmArchiver_version }}\n).+?(?=\n{2,3}###)') || true" >> $GITHUB_ENV
+          CHANGELOG=$(cat Changelog.md | grep -oPz '(?s)(?<=### ${{ env.askfmArchiver_version }}\n{2}).+?(?=\n{2,3}###)')
+          echo "CHANGELOG<<EOF" >> $GITHUB_ENV
+          echo "$CHANGELOG" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: debug
+        run: echo ${{ env.CHANGELOG }}
 
       - name: Release
         uses: softprops/action-gh-release@v1
@@ -64,5 +70,5 @@ jobs:
           files: "${{ env.RELEASE_NAME }}.zip"
           body: |
             ### Changelog:
-            ${{ env.changelog }}
+            ${{ env.CHANGELOG }}
           draft: true
