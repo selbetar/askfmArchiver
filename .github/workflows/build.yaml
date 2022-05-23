@@ -55,7 +55,7 @@ jobs:
 
       - name: Get release notes
         run: |
-          changelog=$(cat Changelog.md | grep -oPz '(?s)(?<=### ${{ env.askfmArchiver_version }}\n{2}).+?(?=\n{2,3}###)') || true
+          changelog=$(cat Changelog.md | grep -oPz '(?s)(?<=### ${{ env.askfmArchiver_version }}\n).+?(?=\n{2,3}###)') || true
           echo "changelog<<EOF" >> $GITHUB_ENV
           echo "$changelog" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
