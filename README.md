@@ -36,7 +36,7 @@ Execute the following commands to build the master branch locally:
 ```bash
 $ git clone https://github.com/selbetar/askfmArchiver.git
 $ cd askfmArchiver
-$ dotnet publish --configuration Release --output="./bin-out" --self-contained "-p:DebugSymbols=false;DebugType=none" ./askfmArchiver/askfmArchiver.csproj
+$ dotnet publish --configuration Release --output="./bin-out" "-p:DebugSymbols=false;DebugType=none" ./askfmArchiver/askfmArchiver.csproj
 ```
 The generated binary should be under `./askfmArchiver/bin-out`.
 
