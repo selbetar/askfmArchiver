@@ -14,7 +14,10 @@ The tool can also generate a markdown file of the parsed data that can be conver
 ## RELEASE FILES
 File|Description
 :---|:---
-[askfmArchiver.zip](https://github.com/selbetar/askfmArchiver/releases/latest/download/askfmArchiver.zip)|Platform-independant binary that ships with all the necessary runtime and dependencies.
+[askfmArchiver-linux-x64.zip](https://github.com/selbetar/askfmArchiver/releases/latest/download/askfmArchiver-linux-x64.zip)|Linux x64 binary with all the necessary runtime dependencies.
+[askfmArchiver-win-x64.zip](https://github.com/selbetar/askfmArchiver/releases/latest/download/askfmArchiver-win-x64.zip)|Windows x64 binary with all the necessary runtime dependencies.
+[askfmArchiver-osx-x64.zip](https://github.com/selbetar/askfmArchiver/releases/latest/download/askfmArchiver-osx-x64.zip)|MacOS (10.12+) binary with all the necessary runtime dependencies.
+
 
 The downloaded zip file can be extracted using a tool like [7zip](https://www.7-zip.org/download.html).
 
@@ -40,7 +43,11 @@ The generated binary should be under `./askfmArchiver/bin-out`.
 # Usage and Options
 In the binary directory, execute the following command:
 ```
+Unix:
 ./askfmArchiver -u <user> -t <type> [OPTIONS]
+
+Windows:
+./askfmArchiver.exe -u <user> -t <type> [OPTIONS]
 ```
 
 ## General Options:
