@@ -9,12 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [win, linux, osx]
+        os: [linux]
         arch: [x64]
     env:
       RELEASE_NAME: "askfmArchiver-${{ matrix.os }}-${{ matrix.arch }}"
     steps:
       - uses: actions/checkout@v3
+      - name: Get release version
+        run: |
+          askfmArchiver_version=$(git describe --tags --abbrev=0)
+          echo "$askfmArchiver_version" >> $GITHUB_ENV
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v2
@@ -31,10 +35,6 @@ jobs:
           --self-contained "-p:DebugSymbols=false;DebugType=none"
           ./askfmArchiver/askfmArchiver.csproj
 
-      - name: Get release version
-        run: |
-          askfmArchiver_version=$(git describe --tags --abbrev=0)
-          echo "$askfmArchiver_version" >> $GITHUB_ENV
 
       - name: Add README and LICENSE to release
         run: cp README.md LICENSE ./${{ env.RELEASE_NAME }}
