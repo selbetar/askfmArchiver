@@ -55,10 +55,7 @@ jobs:
 
       - name: Get release notes
         run: |
-          changelog=$(cat Changelog.md | grep -oPz '(?s)(?<=### ${{ env.askfmArchiver_version }}\n).+?(?=\n{2,3}###)') || true
-          echo "changelog<<EOF" >> $GITHUB_ENV
-          echo "$changelog" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          echo "CHANGELOG=$(cat Changelog.md | grep -oPz '(?s)(?<=### ${{ env.askfmArchiver_version }}\n).+?(?=\n{2,3}###)') || true" >> $GITHUB_ENV
 
       - name: Release
         uses: softprops/action-gh-release@v1
