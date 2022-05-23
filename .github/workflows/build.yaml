@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [linux]
+        os: [linux, win]
         arch: [x64]
     env:
       RELEASE_NAME: "askfmArchiver-${{ matrix.os }}-${{ matrix.arch }}"
