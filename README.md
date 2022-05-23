@@ -44,10 +44,10 @@ The generated binary should be under `./askfmArchiver/bin-out`.
 In the binary directory, execute the following command:
 ```
 Unix:
-./askfmArchiver -u <user> -t <type> [OPTIONS]
+./askfmArchiver -u <user> [OPTIONS]
 
 Windows:
-./askfmArchiver.exe -u <user> -t <type> [OPTIONS]
+./askfmArchiver.exe -u <user> [OPTIONS]
 ```
 
 ## General Options:
