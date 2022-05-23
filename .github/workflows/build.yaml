@@ -1,11 +1,60 @@
 ---
-name: Build and create a new release
+name: Publish a new release
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [win, linux, osx]
+        arch: [x64]
+    env:
+      RELEASE_NAME: "askfmArchiver-${{ matrix.os }}-${{ matrix.arch }}"
     steps:
       - uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: 6.0.x
+
+      - name: Publish ${{ matrix.os }}-${{ matrix.arch }}
+        run: >
+          dotnet publish
+          --configuration Release
+          --output="./${{ env.RELEASE_NAME }}"
+          --os ${{ matrix.os }}
+          --arch ${{ matrix.arch }}
+          --self-contained "-p:DebugSymbols=false;DebugType=none"
+          ./askfmArchiver/askfmArchiver.csproj
+
+      - name: Get release version
+        run: |
+          askfmArchiver_version=$(git describe --tags --abbrev=0)
+          echo "$askfmArchiver_version" >> $GITHUB_ENV
+
+      - name: Add README and LICENSE to release
+        run: cp README.md LICENSE ./${{ env.RELEASE_NAME }}
+
+      - name: Compress artifacts
+        run: zip -qr ${{ env.RELEASE_NAME }}.zip ./${{ env.RELEASE_NAME }}
+
+      - name: Get release notes
+        run: |
+          changelog=$(cat Changelog.md | grep -oPz '(?s)(?<=### ${{ env.askfmArchiver_version }}\n{2}).+?(?=\n{2,3}###)') || true
+          echo "changelog<<EOF" >> $GITHUB_ENV
+          echo "$changelog" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "askfmArchiver ${{ env.askfmArchiver_version }}"
+          files: "${{ env.RELEASE_NAME }}.zip"
+          body: |
+            ### Changelog:
+            ${{ env.changelog }}
+          draft: true
