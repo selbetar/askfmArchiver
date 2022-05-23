@@ -14,7 +14,7 @@ The tool can also generate a markdown file of the parsed data that can be conver
 ## RELEASE FILES
 File|Description
 :---|:---
-[askfmArchiver.zip](https://github.com/selbetar/askfmArchiver/releases/latest/download/askfmArchiver.zip)|Platform-independant binary that ships with all the necessary runtime and depedencies.
+[askfmArchiver.zip](https://github.com/selbetar/askfmArchiver/releases/latest/download/askfmArchiver.zip)|Platform-independant binary that ships with all the necessary runtime and dependencies.
 
 The downloaded zip file can be extracted using a tool like [7zip](https://www.7-zip.org/download.html).
 
@@ -68,7 +68,7 @@ In the binary directory, execute the following command:
 
 ```
 
-## Makrdown Options:
+## Markdown Options:
 ```
   -m, --markdown      Required. Generate markdown file(s) for the specified user.
 
