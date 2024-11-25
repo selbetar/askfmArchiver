@@ -1,3 +1,5 @@
+# No Longer Maintained
+While this tool still works, it's no longer maintained, but consider using [askfm-archiving-scripts](https://github.com/selbetar/askfm-archiving-scripts) instead.
 # askfm Archiver
 A cross-platform tool to archive an ask.fm user profile.
 
